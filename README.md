@@ -140,6 +140,8 @@ python3 package/contents/code/agent-usage-json | python3 -m json.tool
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before you submit a change.
 
+Project credits are available in [CONTRIBUTORS.md](CONTRIBUTORS.md).
+
 ## Related projects
 
 The package uses the [KDE Plasma 6 widget structure](https://develop.kde.org/docs/plasma/widget/setup/).
