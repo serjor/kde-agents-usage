@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: 2026 KDE Agents Usage contributors
+# SPDX-License-Identifier: MIT
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Get the source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.10"
+
+      - name: Run unit tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Compile Python files
+        run: python3 -m py_compile package/contents/code/agent-usage-json package/contents/code/claude-statusline-collector
+
+      - name: Examine the installer syntax
+        run: bash -n install.sh
+
+      - name: Validate package metadata
+        run: python3 -m json.tool package/metadata.json >/dev/null

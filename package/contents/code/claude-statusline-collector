@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 KDE Agents Usage contributors
+# SPDX-License-Identifier: MIT
+
+"""Claude Code status-line bridge: cache real quota fields, then print nothing."""
+
+import json
+import os
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+
+WINDOW_KEYS = ("five_hour", "seven_day", "seven_day_sonnet", "seven_day_opus")
+PERCENT_KEYS = ("used_percent", "usedPercent", "utilization")
+RESET_KEYS = ("resets_at", "resetsAt", "reset_at")
+
+
+def find_usage(value):
+    if isinstance(value, dict):
+        if any(key in value for key in ("five_hour", "seven_day", "rate_limits")):
+            return value
+        for child in value.values():
+            result = find_usage(child)
+            if result:
+                return result
+    elif isinstance(value, list):
+        for child in value:
+            result = find_usage(child)
+            if result:
+                return result
+    return None
+
+
+def sanitized_usage(value):
+    if not isinstance(value, dict):
+        return None
+    rate_limits = value.get("rate_limits", value)
+    if not isinstance(rate_limits, dict):
+        return None
+    result = {}
+    for window_name in WINDOW_KEYS:
+        window = rate_limits.get(window_name)
+        if not isinstance(window, dict):
+            continue
+        clean_window = {
+            key: window[key]
+            for key in PERCENT_KEYS
+            if isinstance(window.get(key), (int, float))
+        }
+        for key in RESET_KEYS:
+            reset = window.get(key)
+            if isinstance(reset, (int, float)):
+                clean_window[key] = reset
+            elif isinstance(reset, str) and len(reset) <= 64:
+                allowed = all(character.isdigit() or character in "TZ:+-." for character in reset)
+                if allowed:
+                    clean_window[key] = reset
+        if clean_window:
+            result[window_name] = clean_window
+    if not result:
+        return None
+    plan = value.get("plan", value.get("plan_type"))
+    allowed_plan = isinstance(plan, str) and all(
+        character.isalnum() or character in " ._+-" for character in plan
+    )
+    if allowed_plan and 0 < len(plan) <= 64:
+        result["plan"] = plan
+    return result
+
+
+def main():
+    try:
+        payload = json.load(sys.stdin)
+        usage = sanitized_usage(find_usage(payload))
+        if not usage:
+            return 0
+        cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "kde-agents-usage/claude-statusline.json"
+        cache.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        descriptor, temporary = tempfile.mkstemp(prefix="claude.", dir=cache.parent)
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump({"collected_at": int(time.time()), "usage": usage}, handle)
+        os.replace(temporary, cache)
+    except (OSError, ValueError, TypeError):
+        return 0
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

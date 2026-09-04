@@ -1,0 +1,369 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 KDE Agents Usage contributors
+# SPDX-License-Identifier: MIT
+
+"""Return local AI-agent quotas in one small, stable JSON document.
+
+The helper intentionally uses only Python's standard library. It never prints
+credentials. Percentages are emitted only when a provider supplies a real
+rate-limit value; missing values stay unavailable instead of becoming 0%.
+"""
+
+from __future__ import annotations
+
+import glob
+import json
+import os
+import shutil
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+
+HOME = Path.home()
+CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", HOME / ".cache")) / "kde-agents-usage"
+CLAUDE_API = "https://api.anthropic.com/api/oauth/usage"
+MAX_CACHE_AGE = 3600
+
+
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Reject redirects for requests that contain an authorization header."""
+
+    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        return None
+
+
+def read_json(path: Path) -> Any:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def write_private_json(path: Path, value: Any) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, separators=(",", ":"))
+        os.replace(temporary, path)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def timestamp(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+        if number > 10_000_000_000:
+            number /= 1000
+        return int(number) if 0 < number < 253_402_300_799 else None
+    if isinstance(value, str):
+        try:
+            return timestamp(int(value))
+        except ValueError:
+            try:
+                return int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp())
+            except ValueError:
+                return None
+    return None
+
+
+def percent(value: Any) -> float | None:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    if result != result or result < 0 or result > 100:
+        return None
+    return round(result, 1)
+
+
+def plan_name(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    allowed = all(character.isalnum() or character in " ._+-" for character in value)
+    return value if value and len(value) <= 64 and allowed else None
+
+
+def make_window(key: str, label: str, data: Any) -> dict[str, Any] | None:
+    if not isinstance(data, dict):
+        return None
+    used = percent(data.get("used_percent", data.get("usedPercent", data.get("utilization"))))
+    reset = timestamp(data.get("resets_at", data.get("resetsAt", data.get("reset_at"))))
+    if used is None and reset is None:
+        return None
+    return {"key": key, "label": label, "used_percent": used, "resets_at": reset}
+
+
+def provider(identifier: str, label: str, available: bool = False, *,
+             source: str | None = None, plan: str | None = None,
+             windows: list[dict[str, Any]] | None = None,
+             error: str | None = None) -> dict[str, Any]:
+    return {
+        "id": identifier,
+        "label": label,
+        "available": available,
+        "source": source,
+        "plan": plan,
+        "windows": windows or [],
+        "error": error,
+    }
+
+
+def normalized_windows(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    rate = payload.get("rate_limits", payload.get("rate_limit", payload))
+    if not isinstance(rate, dict):
+        return []
+    candidates = [
+        ("5h", "5 hours", rate.get("five_hour", rate.get("primary", rate.get("primary_window")))),
+        ("7d", "7 days", rate.get("seven_day", rate.get("weekly", rate.get("secondary", rate.get("secondary_window"))))),
+        ("7d-sonnet", "7 days · Sonnet", rate.get("seven_day_sonnet")),
+        ("7d-opus", "7 days · Opus", rate.get("seven_day_opus")),
+    ]
+    result = []
+    for key, label, value in candidates:
+        item = make_window(key, label, value)
+        if item:
+            result.append(item)
+    return result
+
+
+def executable_exists(name: str) -> bool:
+    if shutil.which(name):
+        return True
+    for directory in (HOME / ".local/bin", HOME / ".npm-global/bin", HOME / ".bun/bin"):
+        if (directory / name).is_file():
+            return True
+    return False
+
+
+def extract_claude_token(credentials: Any) -> str | None:
+    if not isinstance(credentials, dict):
+        return None
+    oauth = credentials.get("claudeAiOauth", credentials.get("oauth", {}))
+    if isinstance(oauth, dict):
+        token = oauth.get("accessToken", oauth.get("access_token"))
+        if isinstance(token, str) and token:
+            return token
+    token = credentials.get("accessToken", credentials.get("access_token"))
+    return token if isinstance(token, str) and token else None
+
+
+def claude_from_payload(payload: Any, source: str) -> dict[str, Any] | None:
+    windows = normalized_windows(payload)
+    if not windows:
+        return None
+    plan = None
+    if isinstance(payload, dict):
+        plan = plan_name(payload.get("plan", payload.get("plan_type")))
+    return provider("claude", "Claude", True, source=source, plan=plan, windows=windows)
+
+
+def sanitized_usage(payload: Any) -> dict[str, Any] | None:
+    """Return only the quota fields that the widget uses."""
+    windows = normalized_windows(payload)
+    if not windows:
+        return None
+    names = {
+        "5h": "five_hour",
+        "7d": "seven_day",
+        "7d-sonnet": "seven_day_sonnet",
+        "7d-opus": "seven_day_opus",
+    }
+    result: dict[str, Any] = {}
+    if isinstance(payload, dict):
+        plan = plan_name(payload.get("plan", payload.get("plan_type")))
+        if plan:
+            result["plan"] = plan
+    for item in windows:
+        result[names[item["key"]]] = {
+            "used_percent": item["used_percent"],
+            "resets_at": item["resets_at"],
+        }
+    return result
+
+
+def fetch_claude(token: str) -> Any:
+    request = urllib.request.Request(
+        CLAUDE_API,
+        headers={
+            "Authorization": "Bearer " + token,
+            "anthropic-beta": "oauth-2025-04-20",
+            "User-Agent": "kde-agents-usage/0.1",
+            "Accept": "application/json",
+        },
+    )
+    opener = urllib.request.build_opener(NoRedirectHandler())
+    with opener.open(request, timeout=8) as response:
+        return json.loads(response.read(1024 * 1024).decode("utf-8"))
+
+
+def collect_claude() -> dict[str, Any]:
+    statusline_path = CACHE_DIR / "claude-statusline.json"
+    statusline = read_json(statusline_path)
+    if isinstance(statusline, dict):
+        collected = timestamp(statusline.get("collected_at"))
+        result = claude_from_payload(statusline.get("usage", statusline), "statusline")
+        if result and collected and time.time() - collected <= 900:
+            return result
+
+    api_cache_path = CACHE_DIR / "claude-api.json"
+    cached = read_json(api_cache_path)
+    allow_network = os.environ.get("AGENT_USAGE_CLAUDE_NETWORK") == "1"
+    if allow_network:
+        credentials_path = Path(os.environ.get("CLAUDE_CONFIG_DIR", HOME / ".claude")) / ".credentials.json"
+        token = extract_claude_token(read_json(credentials_path))
+    else:
+        token = None
+    if allow_network and token:
+        try:
+            payload = fetch_claude(token)
+            result = claude_from_payload(payload, "oauth")
+            if result:
+                usage = sanitized_usage(payload)
+                if usage:
+                    write_private_json(api_cache_path, {"collected_at": int(time.time()), "usage": usage})
+                return result
+        except (OSError, ValueError, urllib.error.URLError, urllib.error.HTTPError):
+            pass
+
+    if isinstance(cached, dict):
+        collected = timestamp(cached.get("collected_at"))
+        result = claude_from_payload(cached.get("usage"), "oauth cache")
+        if result and collected and time.time() - collected <= MAX_CACHE_AGE:
+            return result
+
+    installed = executable_exists("claude") or (HOME / ".claude").exists()
+    if installed and not allow_network:
+        message = ("Claude is detected. Enable the local status-line collector or allow the "
+                   "optional Anthropic request in the widget settings.")
+    elif installed:
+        message = ("Claude is detected, but no current quota is available. Sign in or enable the "
+                   "included status-line collector.")
+    else:
+        message = "Claude is not installed."
+    return provider("claude", "Claude", error=message)
+
+
+def recent_codex_files() -> list[Path]:
+    paths = [Path(path) for path in glob.glob(str(HOME / ".codex/sessions/**/*.jsonl"), recursive=True)]
+    try:
+        paths.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    except OSError:
+        pass
+    return paths[:20]
+
+
+def reverse_lines(path: Path, maximum: int = 2 * 1024 * 1024):
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - maximum))
+            data = handle.read(maximum)
+        for line in reversed(data.splitlines()):
+            yield line.decode("utf-8", errors="replace")
+    except OSError:
+        return
+
+
+def collect_codex() -> dict[str, Any]:
+    newest: tuple[int, dict[str, Any]] | None = None
+    for path in recent_codex_files():
+        for line in reverse_lines(path):
+            if '"rate_limits"' not in line and '"rate_limit"' not in line:
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            payload = event.get("payload", event)
+            if not isinstance(payload, dict):
+                continue
+            rate = payload.get("rate_limits", payload.get("rate_limit"))
+            windows = normalized_windows({"rate_limits": rate})
+            if not windows:
+                continue
+            event_time = timestamp(event.get("timestamp")) or int(path.stat().st_mtime)
+            value = provider("codex", "Codex", True, source="local session",
+                             plan=plan_name(rate.get("plan_type")) if isinstance(rate, dict) else None,
+                             windows=windows)
+            if newest is None or event_time > newest[0]:
+                newest = (event_time, value)
+            break
+    if newest:
+        # A future reset makes the corresponding quota authoritative even when
+        # the terminal session itself is no longer open.
+        valid = [item for item in newest[1]["windows"] if not item["resets_at"] or item["resets_at"] > time.time()]
+        if valid:
+            newest[1]["windows"] = valid
+            return newest[1]
+    installed = executable_exists("codex") or (HOME / ".codex").exists()
+    return provider("codex", "Codex", error=(
+        "Codex is detected, but no recent rate-limit event was found." if installed
+        else "Codex is not installed."))
+
+
+def opencode_detected() -> bool:
+    data_home = Path(os.environ.get("XDG_DATA_HOME", HOME / ".local/share"))
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config"))
+    return executable_exists("opencode") or (data_home / "opencode").exists() or (config_home / "opencode").exists()
+
+
+def collect_opencode() -> dict[str, Any]:
+    # OpenCode is a client for many unrelated providers. There is no single
+    # OpenCode quota or reset window. Provider plugins can export the same
+    # normalized schema to this optional file without changing the plasmoid.
+    custom_path = Path(os.environ.get(
+        "OPENCODE_USAGE_FILE",
+        Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "kde-agents-usage/opencode.json",
+    ))
+    custom = read_json(custom_path)
+    if isinstance(custom, dict):
+        windows = normalized_windows(custom)
+        if windows:
+            return provider("opencode", "OpenCode", True, source="provider export",
+                            plan=custom.get("plan"), windows=windows)
+    return provider("opencode", "OpenCode", error=(
+        "Detected. OpenCode uses separate model providers and exposes no universal quota; "
+        "configure a provider export to show limits." if opencode_detected()
+        else "OpenCode is not installed."))
+
+
+COLLECTORS = {"claude": collect_claude, "codex": collect_codex, "opencode": collect_opencode}
+
+
+def main() -> int:
+    requested = [item.strip().lower() for item in
+                 os.environ.get("AGENT_USAGE_PROVIDERS", "claude,codex,opencode").split(",") if item.strip()]
+    providers = []
+    for name in requested:
+        collector = COLLECTORS.get(name)
+        if collector:
+            try:
+                providers.append(collector())
+            except Exception as error:  # Keep one broken adapter from hiding all agents.
+                providers.append(provider(name, name.title(), error="Collector failed: " + type(error).__name__))
+    json.dump({"generated_at": int(time.time()), "providers": providers}, sys.stdout,
+              ensure_ascii=False, separators=(",", ":"))
+    sys.stdout.write("\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

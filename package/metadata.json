@@ -1,0 +1,18 @@
+{
+  "KPlugin": {
+    "Authors": [
+      {
+        "Name": "KDE Agents Usage contributors"
+      }
+    ],
+    "Category": "System Information",
+    "Description": "AI coding agent quota monitor for Claude Code, Codex, and OpenCode",
+    "Icon": "view-statistics",
+    "Id": "io.github.kde-agents-usage",
+    "License": "MIT",
+    "Name": "Agents Usage",
+    "Version": "0.1.0"
+  },
+  "KPackageStructure": "Plasma/Applet",
+  "X-Plasma-API-Minimum-Version": "6.0"
+}

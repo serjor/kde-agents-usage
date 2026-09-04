@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.plasmoid
+.pytest_cache/
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.log
+.idea/
+.vscode/
