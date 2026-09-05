@@ -13,6 +13,7 @@ SPDX-License-Identifier: MIT
     <entry name="showCodex" type="Bool"><default>true</default></entry>
     <entry name="allowCodexNetwork" type="Bool"><default>false</default></entry>
     <entry name="showOpenCode" type="Bool"><default>true</default></entry>
+    <entry name="showOllama" type="Bool"><default>false</default></entry>
     <entry name="refreshMinutes" type="Int"><default>5</default></entry>
     <entry name="warningRemaining" type="Int"><default>25</default></entry>
     <entry name="criticalRemaining" type="Int"><default>10</default></entry>

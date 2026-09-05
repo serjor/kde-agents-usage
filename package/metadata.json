@@ -6,7 +6,7 @@
       }
     ],
     "Category": "System Information",
-    "Description": "AI coding agent quota monitor for Claude Code, Codex, and OpenCode",
+    "Description": "AI coding agent quota monitor for Claude Code, Codex, OpenCode, and Ollama Cloud",
     "Icon": "view-statistics",
     "Id": "io.github.kde-agents-usage",
     "License": "MIT",

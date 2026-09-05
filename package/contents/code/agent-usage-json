@@ -30,7 +30,9 @@ from typing import Any
 HOME = Path.home()
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", HOME / ".cache")) / "kde-agents-usage"
 CLAUDE_API = "https://api.anthropic.com/api/oauth/usage"
+OLLAMA_API = "https://ollama.com/api/usage"
 MAX_CACHE_AGE = 3600
+OLLAMA_TIMEOUT = 8
 CODEX_LIVE_TIMEOUT = 6
 
 
@@ -47,6 +49,19 @@ def read_json(path: Path) -> Any:
             return json.load(handle)
     except (OSError, ValueError, TypeError):
         return None
+
+
+def read_text_key(path: Path) -> str | None:
+    """Read a single-line credential file; the value never reaches the log."""
+    try:
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not value or len(value) > 256:
+        return None
+    if not all(character.isalnum() or character in "._-" for character in value):
+        return None
+    return value
 
 
 def write_private_json(path: Path, value: Any) -> None:
@@ -441,7 +456,115 @@ def collect_opencode() -> dict[str, Any]:
         else "OpenCode is not installed."))
 
 
-COLLECTORS = {"claude": collect_claude, "codex": collect_codex, "opencode": collect_opencode}
+def ollama_windows(payload: Any) -> list[dict[str, Any]]:
+    """Normalize the undocumented ollama.com usage document into quota windows."""
+    if not isinstance(payload, dict):
+        return []
+    limits = payload.get("limits")
+    if not isinstance(limits, dict):
+        return []
+
+    def fraction_to_percent(value: Any) -> float | None:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if number != number or number < 0 or number > 1:
+            return None
+        return round(number * 100, 1)
+
+    candidates = [
+        ("5h", "5 hours", limits.get("session")),
+        ("7d", "7 days", limits.get("weekly")),
+    ]
+    result = []
+    for key, label, value in candidates:
+        window = make_window(key, label, {
+            "used_percent": fraction_to_percent(value.get("usage") if isinstance(value, dict) else None)
+        })
+        if window:
+            result.append(window)
+    return result
+
+
+def sanitized_ollama(payload: Any) -> dict[str, Any] | None:
+    """Return only the quota fields that the widget uses."""
+    windows = ollama_windows(payload)
+    if not windows:
+        return None
+    result: dict[str, Any] = {}
+    if isinstance(payload, dict) and isinstance(payload.get("limits"), dict):
+        session = payload["limits"].get("session")
+        weekly = payload["limits"].get("weekly")
+        if isinstance(session, dict) and session.get("usage") is not None:
+            result["session"] = session["usage"]
+        if isinstance(weekly, dict) and weekly.get("usage") is not None:
+            result["weekly"] = weekly["usage"]
+    return result if result else None
+
+
+def fetch_ollama(api_key: str) -> Any:
+    request = urllib.request.Request(
+        OLLAMA_API,
+        headers={
+            "Authorization": "Bearer " + api_key,
+            "User-Agent": "kde-agents-usage/0.1",
+            "Accept": "application/json",
+        },
+    )
+    opener = urllib.request.build_opener(NoRedirectHandler())
+    with opener.open(request, timeout=OLLAMA_TIMEOUT) as response:
+        return json.loads(response.read(1024 * 1024).decode("utf-8"))
+
+
+def collect_ollama() -> dict[str, Any]:
+    """Query the ollama.com usage API when the user has stored an API key.
+
+    The key is read from OLLAMA_API_KEY or ~/.config/kde-agents-usage/ollama-key.
+    Responses are cached for MAX_CACHE_AGE seconds and never include the key.
+    """
+    cache_path = CACHE_DIR / "ollama-usage.json"
+    cached = read_json(cache_path)
+
+    api_key = os.environ.get("OLLAMA_API_KEY", "").strip()
+    key_path = Path(os.environ.get(
+        "XDG_CONFIG_HOME", HOME / ".config")) / "kde-agents-usage/ollama-key"
+    if not api_key:
+        key_file = read_text_key(key_path)
+        if key_file:
+            api_key = key_file
+
+    if api_key:
+        try:
+            payload = fetch_ollama(api_key)
+            windows = ollama_windows(payload)
+            if windows:
+                usage = sanitized_ollama(payload)
+                if usage:
+                    write_private_json(cache_path, {"collected_at": int(time.time()), "usage": usage})
+                return provider("ollama", "Ollama", True, source="ollama.com",
+                                plan=plan_name(payload.get("plan")), windows=windows)
+        except (OSError, ValueError, urllib.error.URLError, urllib.error.HTTPError):
+            pass
+
+    if isinstance(cached, dict):
+        collected = timestamp(cached.get("collected_at"))
+        usage = cached.get("usage")
+        if isinstance(usage, dict):
+            windows = ollama_windows({"limits": {
+                "session": {"usage": usage.get("session")},
+                "weekly": {"usage": usage.get("weekly")},
+            }})
+            if windows and collected and time.time() - collected <= MAX_CACHE_AGE:
+                return provider("ollama", "Ollama", True, source="ollama.com cache", windows=windows)
+
+    message = ("Set OLLAMA_API_KEY or create ~/.config/kde-agents-usage/ollama-key "
+               "with an ollama.com API key (ollama.com/settings/keys).")
+    return provider("ollama", "Ollama", error=message)
+
+
+COLLECTORS = {"claude": collect_claude, "codex": collect_codex, "opencode": collect_opencode,
+              "ollama": collect_ollama}
 
 
 def main() -> int:
