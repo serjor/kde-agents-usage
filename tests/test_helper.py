@@ -14,13 +14,17 @@ HELPER = ROOT / "package/contents/code/agent-usage-json"
 COLLECTOR = ROOT / "package/contents/code/claude-statusline-collector"
 
 
-def run_helper(home: Path, providers: str):
+def run_helper(home: Path, providers: str, extra_env=None):
     env = os.environ.copy()
+    env.pop("AGENT_USAGE_CLAUDE_NETWORK", None)
+    env.pop("AGENT_USAGE_CODEX_NETWORK", None)
     env["HOME"] = str(home)
     env["XDG_CACHE_HOME"] = str(home / ".cache")
     env["XDG_CONFIG_HOME"] = str(home / ".config")
     env["XDG_DATA_HOME"] = str(home / ".local/share")
     env["AGENT_USAGE_PROVIDERS"] = providers
+    if extra_env:
+        env.update(extra_env)
     result = subprocess.run(
         ["python3", str(HELPER)], env=env, text=True, capture_output=True,
         timeout=5, check=True,
@@ -94,6 +98,52 @@ class HelperTests(unittest.TestCase):
             self.assertTrue(codex["available"])
             self.assertEqual(codex["plan"], "plus")
             self.assertEqual([12.0, 34.0], [item["used_percent"] for item in codex["windows"]])
+
+    def test_codex_live_query_replaces_stale_session_after_external_reset(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            session = home / ".codex/sessions/2026/09/04/session.jsonl"
+            session.parent.mkdir(parents=True)
+            session.write_text(json.dumps({
+                "timestamp": "2026-09-04T12:00:00Z",
+                "payload": {"rate_limits": {
+                    "primary": {"used_percent": 99, "resets_at": 4102444800},
+                    "secondary": {"used_percent": 72, "resets_at": 4102444800},
+                    "plan_type": "plus",
+                }},
+            }) + "\n", encoding="utf-8")
+
+            binary = home / "bin/codex"
+            binary.parent.mkdir()
+            binary.write_text("""#!/usr/bin/env python3
+import json
+import sys
+for line in sys.stdin:
+    request = json.loads(line)
+    if request.get(\"id\") == 1:
+        print(json.dumps({\"id\": 1, \"result\": {}}), flush=True)
+    elif request.get(\"id\") == 2:
+        print(json.dumps({
+            \"id\": 2,
+            \"result\": {
+                \"rateLimits\": {\"primary\": {\"usedPercent\": 80}},
+                \"rateLimitsByLimitId\": {\"codex\": {
+                    \"primary\": {\"usedPercent\": 2, \"resetsAt\": 4102445800},
+                    \"secondary\": {\"usedPercent\": 0, \"resetsAt\": 4102446800},
+                    \"planType\": \"plus\"
+                }}
+            }
+        }), flush=True)
+""", encoding="utf-8")
+            binary.chmod(0o755)
+
+            codex = run_helper(home, "codex", {
+                "AGENT_USAGE_CODEX_NETWORK": "1",
+                "PATH": str(binary.parent) + os.pathsep + os.environ.get("PATH", ""),
+            })["providers"][0]
+            self.assertTrue(codex["available"])
+            self.assertEqual("Codex account", codex["source"])
+            self.assertEqual([2.0, 0.0], [item["used_percent"] for item in codex["windows"]])
 
     def test_opencode_does_not_invent_a_percentage(self):
         with tempfile.TemporaryDirectory() as temporary:

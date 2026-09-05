@@ -26,7 +26,8 @@ The panel view shows all available quota windows. Open the widget to see reset c
 |---|---|---|
 | Claude Code | Local status-line collector | Five-hour, weekly, Sonnet, and Opus windows when available |
 | Claude Code | Optional Anthropic usage API | Five-hour, weekly, Sonnet, and Opus windows when available |
-| OpenAI Codex CLI | Recent local session events | Five-hour and weekly windows |
+| OpenAI Codex CLI | Recent local session events | Last observed five-hour and weekly windows |
+| OpenAI Codex CLI | Optional account query through the installed CLI | Current five-hour and weekly windows |
 | OpenCode | Optional local provider export | Windows from the selected provider |
 
 OpenCode connects to different model providers. Thus, OpenCode does not have one universal quota.
@@ -77,6 +78,16 @@ You can use the Anthropic usage API instead. Enable **Allow requests to the Anth
 
 This option is off by default. It reads the Claude OAuth token and sends it only to `https://api.anthropic.com/api/oauth/usage`.
 
+## Configure Codex
+
+By default, the widget reads quota events from local Codex session files. A reset made outside an
+active Codex session does not update those files until Codex produces its next rate-limit event.
+
+Enable **Fetch current Codex limits through the Codex CLI** to reflect external resets immediately.
+The helper sends `account/rateLimits/read` to the installed Codex app server. Codex handles authentication.
+The widget does not read or store the Codex access token.
+If the live query is unavailable, the widget uses the latest local session event.
+
 ## Configure an OpenCode provider
 
 Create `~/.config/kde-agents-usage/opencode.json` when an OpenCode provider supplies rate limits.
@@ -110,6 +121,9 @@ The helper reads recent Codex session files. It extracts only rate-limit values,
 The Claude status-line collector stores only quota values, reset times, and the plan name. It does not store the full input.
 
 The optional Anthropic request keeps the OAuth token in memory. It does not cache the token or follow HTTP redirects.
+
+The optional Codex account query delegates the authenticated request to the installed Codex CLI.
+The widget receives only the quota snapshot and does not read Codex credentials.
 
 Cache files use user-only permissions. The cache directory is `~/.cache/kde-agents-usage`.
 

@@ -135,6 +135,8 @@ PlasmoidItem {
         errorText = ""
         runningCommand = "AGENT_USAGE_CLAUDE_NETWORK="
                        + (Plasmoid.configuration.allowClaudeNetwork ? "1" : "0")
+                       + " AGENT_USAGE_CODEX_NETWORK="
+                       + (Plasmoid.configuration.allowCodexNetwork ? "1" : "0")
                        + " AGENT_USAGE_PROVIDERS=" + enabledProviders()
                        + " python3 " + shellQuote(helperPath)
         executable.connectSource(runningCommand)

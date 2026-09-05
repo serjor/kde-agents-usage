@@ -23,4 +23,6 @@ The default configuration uses local data sources and makes no network requests.
 
 Optional Anthropic API access requires explicit user consent. The helper sends the OAuth token only to the configured HTTPS endpoint.
 
-The helper does not follow HTTP redirects for this request. Cache files contain normalized quota data and use user-only permissions.
+Optional Codex account access also requires explicit user consent. The helper delegates the request to the installed Codex CLI and does not read Codex credentials.
+
+The Anthropic request does not follow HTTP redirects. Cache files contain normalized quota data and use user-only permissions.
