@@ -15,6 +15,22 @@ Use synthetic data in tests and examples. Do not submit real names, email addres
 
 Remove unrelated log lines before you submit a bug report. Use GitHub private vulnerability reporting for sensitive security details.
 
+## Publish a release
+
+The [release workflow](.github/workflows/release.yml) builds and publishes the plasmoid package. Create a tag to start it:
+
+```bash
+git tag v0.1.1 && git push origin v0.1.1
+```
+
+The workflow runs the tests, sets the version in `metadata.json` from the tag, and attaches `io.github.kde-agents-usage-<version>.plasmoid` to a GitHub release. Do not edit `metadata.json` for a release.
+
+To install a release file locally, run:
+
+```bash
+kpackagetool6 --type Plasma/Applet --upgrade <file>.plasmoid
+```
+
 ## Submit a change
 
 1. Fork the repository.

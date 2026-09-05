@@ -58,6 +58,14 @@ systemctl --user restart plasma-plasmashell.service
 
 Run `./install.sh` again to install an update.
 
+### Install from a release file
+
+Download the `.plasmoid` file from [GitHub releases](https://github.com/kdeagentsusage/kde-agents-usage/releases) and install it:
+
+```bash
+kpackagetool6 --type Plasma/Applet --upgrade <file>.plasmoid
+```
+
 ## Configure Claude Code
 
 The local status-line collector is the most private Claude source. It does not make network requests.
