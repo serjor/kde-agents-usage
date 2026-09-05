@@ -73,6 +73,38 @@ PlasmoidItem {
         return providerData.windows && providerData.windows.length ? providerData.windows[0] : null
     }
 
+    function importantWindow(providerData) {
+        var windows = providerData.windows || []
+        var selected = windows.length ? windows[0] : null
+        var selectedRemaining = remaining(selected)
+        for (var i = 1; i < windows.length; ++i) {
+            var candidateRemaining = remaining(windows[i])
+            if (candidateRemaining !== null
+                    && (selectedRemaining === null || candidateRemaining < selectedRemaining)) {
+                selected = windows[i]
+                selectedRemaining = candidateRemaining
+            }
+        }
+        return selected
+    }
+
+    function stateText(value) {
+        if (value === null) return i18n("Unknown")
+        if (value <= Plasmoid.configuration.criticalRemaining) return i18n("Critical")
+        if (value <= Plasmoid.configuration.warningRemaining) return i18n("Low")
+        return i18n("Available")
+    }
+
+    function freshnessText() {
+        if (loading && !report) return i18n("Loading…")
+        if (!report || !report.generated_at) return i18n("Not updated")
+        var seconds = Math.max(0, Math.floor(nowMs / 1000 - Number(report.generated_at)))
+        if (seconds < 60) return i18n("Updated now")
+        var minutes = Math.floor(seconds / 60)
+        if (minutes < 60) return i18n("Updated %1m ago", minutes)
+        return i18n("Updated %1h ago", Math.floor(minutes / 60))
+    }
+
     function providerSummary(providerData) {
         if (!providerData.available || !providerData.windows || !providerData.windows.length)
             return providerData.error || i18n("unavailable")
@@ -147,48 +179,60 @@ PlasmoidItem {
     Component.onCompleted: refresh()
 
     compactRepresentation: MouseArea {
-        implicitWidth: compactRow.implicitWidth + Kirigami.Units.smallSpacing * 2
+        id: compactMouse
+
+        implicitWidth: compactRow.implicitWidth + Kirigami.Units.largeSpacing * 2
         implicitHeight: Kirigami.Units.iconSizes.smallMedium
         Layout.minimumWidth: implicitWidth
         Layout.preferredWidth: implicitWidth
+        hoverEnabled: true
         onClicked: root.expanded = !root.expanded
+
+        Rectangle {
+            anchors.fill: parent
+            radius: Kirigami.Units.cornerRadius
+            color: Kirigami.Theme.highlightColor
+            opacity: compactMouse.containsMouse ? 0.12 : 0
+
+            Behavior on opacity {
+                NumberAnimation { duration: Kirigami.Units.shortDuration }
+            }
+        }
 
         RowLayout {
             id: compactRow
             anchors.centerIn: parent
-            spacing: Kirigami.Units.smallSpacing
+            spacing: Kirigami.Units.largeSpacing
             Repeater {
                 model: root.providers()
                 delegate: RowLayout {
                     id: compactProvider
                     required property var modelData
-                    spacing: 2
+                    readonly property var windowData: root.importantWindow(modelData)
+                    readonly property var availableValue: root.remaining(windowData)
+                    spacing: Kirigami.Units.smallSpacing
+
+                    Rectangle {
+                        implicitWidth: Kirigami.Units.smallSpacing
+                        implicitHeight: implicitWidth
+                        radius: width / 2
+                        color: root.colorFor(compactProvider.availableValue)
+                    }
                     PlasmaComponents.Label {
                         text: modelData.label.slice(0, 1)
                         font.bold: true
-                        color: root.colorFor(root.remaining(root.headline(modelData)))
-                    }
-                    Repeater {
-                        model: compactProvider.modelData.windows || []
-                        delegate: RowLayout {
-                            required property int index
-                            required property var modelData
-                            spacing: 2
-                            PlasmaComponents.Label {
-                                text: (index > 0 ? "· " : "") + modelData.key
-                                opacity: 0.7
-                            }
-                            PlasmaComponents.Label {
-                                text: root.formatRemaining(modelData)
-                                color: root.colorFor(root.remaining(modelData))
-                            }
-                        }
                     }
                     PlasmaComponents.Label {
-                        visible: !compactProvider.modelData.windows
-                                 || compactProvider.modelData.windows.length === 0
-                        text: "—"
-                        color: Kirigami.Theme.disabledTextColor
+                        visible: compactProvider.windowData !== null
+                        text: compactProvider.windowData ? compactProvider.windowData.key : ""
+                        opacity: 0.65
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    }
+                    PlasmaComponents.Label {
+                        text: compactProvider.windowData
+                              ? root.formatRemaining(compactProvider.windowData) : "—"
+                        font.bold: true
+                        color: root.colorFor(compactProvider.availableValue)
                     }
                 }
             }
@@ -202,88 +246,237 @@ PlasmoidItem {
     }
 
     fullRepresentation: Item {
-        implicitWidth: Kirigami.Units.gridUnit * 25
-        implicitHeight: Math.min(details.implicitHeight + Kirigami.Units.largeSpacing * 2,
-                                 Kirigami.Units.gridUnit * 32)
+        implicitWidth: Kirigami.Units.gridUnit * 28
+        implicitHeight: Math.min(Math.max(details.implicitHeight + Kirigami.Units.largeSpacing * 2,
+                                          Kirigami.Units.gridUnit * 15),
+                                 Kirigami.Units.gridUnit * 36)
+        Layout.minimumHeight: Math.min(implicitHeight, Kirigami.Units.gridUnit * 15)
+        Layout.preferredHeight: implicitHeight
 
-        ColumnLayout {
-            id: details
+        PlasmaComponents.ScrollView {
+            id: fullScroll
+
             anchors.fill: parent
-            anchors.margins: Kirigami.Units.largeSpacing
-            spacing: Kirigami.Units.largeSpacing
+            contentWidth: availableWidth
+            clip: true
 
-            RowLayout {
-                Layout.fillWidth: true
-                Kirigami.Heading { text: i18n("Available agent quota"); level: 2; Layout.fillWidth: true }
-                PlasmaComponents.ToolButton {
-                    icon.name: "view-refresh"
-                    enabled: !root.loading
-                    onClicked: root.refresh()
-                    PlasmaComponents.ToolTip { text: i18n("Refresh") }
-                }
-            }
+            ColumnLayout {
+                id: details
 
-            PlasmaComponents.Label {
-                visible: root.errorText.length > 0
-                text: root.errorText
-                color: Kirigami.Theme.negativeTextColor
-                wrapMode: Text.Wrap
-                Layout.fillWidth: true
-            }
+                width: fullScroll.availableWidth
+                spacing: Kirigami.Units.largeSpacing
 
-            Repeater {
-                model: root.providers()
-                delegate: ColumnLayout {
-                    required property var modelData
+                RowLayout {
                     Layout.fillWidth: true
+                    Layout.leftMargin: Kirigami.Units.largeSpacing
+                    Layout.rightMargin: Kirigami.Units.largeSpacing
+                    Layout.topMargin: Kirigami.Units.largeSpacing
                     spacing: Kirigami.Units.smallSpacing
 
-                    RowLayout {
+                    Item {
+                        implicitWidth: Kirigami.Units.iconSizes.medium
+                        implicitHeight: implicitWidth
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: width / 2
+                            color: Kirigami.Theme.highlightColor
+                            opacity: 0.16
+                        }
+                        Kirigami.Icon {
+                            anchors.centerIn: parent
+                            source: "view-statistics"
+                            implicitWidth: Kirigami.Units.iconSizes.smallMedium
+                            implicitHeight: implicitWidth
+                            color: Kirigami.Theme.highlightColor
+                        }
+                    }
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        Kirigami.Heading { text: modelData.label; level: 3; Layout.fillWidth: true }
+                        spacing: 0
+                        Kirigami.Heading { text: i18n("Available quota"); level: 2 }
                         PlasmaComponents.Label {
-                            text: modelData.plan ? modelData.plan : ""
-                            opacity: 0.7
+                            text: root.freshnessText()
+                            opacity: 0.65
+                            font.pointSize: Kirigami.Theme.smallFont.pointSize
                         }
                     }
-                    PlasmaComponents.Label {
-                        visible: !modelData.available
-                        text: modelData.error || i18n("Usage unavailable")
-                        wrapMode: Text.Wrap
-                        opacity: 0.7
-                        Layout.fillWidth: true
+                    PlasmaComponents.BusyIndicator {
+                        visible: root.loading
+                        running: visible
+                        implicitWidth: Kirigami.Units.iconSizes.smallMedium
+                        implicitHeight: implicitWidth
                     }
-                    Repeater {
-                        model: modelData.windows || []
-                        delegate: RowLayout {
-                            required property var modelData
-                            Layout.fillWidth: true
-                            PlasmaComponents.Label { text: modelData.label; Layout.preferredWidth: Kirigami.Units.gridUnit * 7 }
-                            PlasmaComponents.ProgressBar {
-                                from: 0; to: 100
-                                value: root.remaining(modelData) === null ? 0 : root.remaining(modelData)
-                                Layout.fillWidth: true
-                            }
-                            PlasmaComponents.Label {
-                                text: root.formatRemaining(modelData)
-                                font.bold: true
-                                color: root.colorFor(root.remaining(modelData))
-                                Layout.preferredWidth: Kirigami.Units.gridUnit * 3
-                            }
-                            PlasmaComponents.Label {
-                                text: modelData.resets_at ? root.countdown(modelData.resets_at) : "—"
-                                horizontalAlignment: Text.AlignRight
-                                Layout.preferredWidth: Kirigami.Units.gridUnit * 5
-                            }
-                        }
-                    }
-                    PlasmaComponents.Label {
-                        visible: modelData.source && modelData.available
-                        text: i18n("Source: %1", modelData.source)
-                        opacity: 0.55
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    PlasmaComponents.ToolButton {
+                        icon.name: "view-refresh"
+                        enabled: !root.loading
+                        onClicked: root.refresh()
+                        PlasmaComponents.ToolTip { text: i18n("Refresh") }
                     }
                 }
+
+                PlasmaComponents.Frame {
+                    visible: root.errorText.length > 0
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Kirigami.Units.largeSpacing
+                    Layout.rightMargin: Kirigami.Units.largeSpacing
+                    padding: Kirigami.Units.largeSpacing
+
+                    contentItem: RowLayout {
+                        spacing: Kirigami.Units.smallSpacing
+                        Kirigami.Icon {
+                            source: "dialog-error-symbolic"
+                            color: Kirigami.Theme.negativeTextColor
+                            implicitWidth: Kirigami.Units.iconSizes.smallMedium
+                            implicitHeight: implicitWidth
+                        }
+                        PlasmaComponents.Label {
+                            text: root.errorText
+                            color: Kirigami.Theme.negativeTextColor
+                            wrapMode: Text.Wrap
+                            Layout.fillWidth: true
+                        }
+                    }
+                }
+
+                Repeater {
+                    model: root.providers()
+                    delegate: PlasmaComponents.Frame {
+                        id: providerCard
+
+                        required property var modelData
+                        readonly property var headlineWindow: root.importantWindow(modelData)
+                        readonly property var headlineRemaining: root.remaining(headlineWindow)
+
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Kirigami.Units.largeSpacing
+                        Layout.rightMargin: Kirigami.Units.largeSpacing
+                        padding: Kirigami.Units.largeSpacing
+
+                        contentItem: ColumnLayout {
+                            spacing: Kirigami.Units.largeSpacing
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: Kirigami.Units.smallSpacing
+
+                                Rectangle {
+                                    implicitWidth: Kirigami.Units.smallSpacing * 1.5
+                                    implicitHeight: implicitWidth
+                                    radius: width / 2
+                                    color: root.colorFor(providerCard.headlineRemaining)
+                                }
+                                Kirigami.Heading {
+                                    text: providerCard.modelData.label
+                                    level: 3
+                                    Layout.fillWidth: true
+                                }
+                                PlasmaComponents.Label {
+                                    visible: providerCard.modelData.plan
+                                    text: providerCard.modelData.plan || ""
+                                    opacity: 0.65
+                                    font.bold: true
+                                    font.capitalization: Font.AllUppercase
+                                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                                }
+                            }
+
+                            PlasmaComponents.Label {
+                                visible: !providerCard.modelData.available
+                                text: providerCard.modelData.error || i18n("Usage unavailable")
+                                wrapMode: Text.Wrap
+                                opacity: 0.7
+                                Layout.fillWidth: true
+                            }
+
+                            Repeater {
+                                model: providerCard.modelData.windows || []
+                                delegate: ColumnLayout {
+                                    id: quotaWindow
+
+                                    required property var modelData
+                                    readonly property var availableValue: root.remaining(modelData)
+                                    Layout.fillWidth: true
+                                    spacing: Kirigami.Units.smallSpacing
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 0
+                                            PlasmaComponents.Label {
+                                                text: quotaWindow.modelData.label
+                                                font.bold: true
+                                            }
+                                            PlasmaComponents.Label {
+                                                text: root.stateText(quotaWindow.availableValue)
+                                                color: root.colorFor(quotaWindow.availableValue)
+                                                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                                            }
+                                        }
+                                        PlasmaComponents.Label {
+                                            text: root.formatRemaining(quotaWindow.modelData)
+                                            color: root.colorFor(quotaWindow.availableValue)
+                                            font.bold: true
+                                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.55
+                                        }
+                                    }
+
+                                    Item {
+                                        implicitHeight: Kirigami.Units.smallSpacing
+                                        Layout.fillWidth: true
+
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: height / 2
+                                            color: Kirigami.Theme.disabledTextColor
+                                            opacity: 0.22
+                                        }
+                                        Rectangle {
+                                            width: parent.width * (quotaWindow.availableValue === null
+                                                   ? 0 : quotaWindow.availableValue / 100)
+                                            height: parent.height
+                                            radius: height / 2
+                                            color: root.colorFor(quotaWindow.availableValue)
+
+                                            Behavior on width {
+                                                NumberAnimation { duration: Kirigami.Units.longDuration }
+                                            }
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: Kirigami.Units.smallSpacing
+                                        Kirigami.Icon {
+                                            source: "chronometer"
+                                            implicitWidth: Kirigami.Units.iconSizes.small
+                                            implicitHeight: implicitWidth
+                                            opacity: 0.65
+                                        }
+                                        PlasmaComponents.Label {
+                                            text: quotaWindow.modelData.resets_at
+                                                  ? i18n("Resets in %1", root.countdown(quotaWindow.modelData.resets_at))
+                                                  : i18n("Reset unknown")
+                                            opacity: 0.65
+                                            font.pointSize: Kirigami.Theme.smallFont.pointSize
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+                                }
+                            }
+
+                            PlasmaComponents.Label {
+                                visible: providerCard.modelData.source && providerCard.modelData.available
+                                text: i18n("Source: %1", providerCard.modelData.source)
+                                opacity: 0.5
+                                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                            }
+                        }
+                    }
+                }
+
+                Item { implicitHeight: Kirigami.Units.smallSpacing }
             }
         }
     }
