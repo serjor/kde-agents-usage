@@ -14,7 +14,9 @@ from __future__ import annotations
 import glob
 import json
 import os
+import selectors
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -29,6 +31,7 @@ HOME = Path.home()
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", HOME / ".cache")) / "kde-agents-usage"
 CLAUDE_API = "https://api.anthropic.com/api/oauth/usage"
 MAX_CACHE_AGE = 3600
+CODEX_LIVE_TIMEOUT = 6
 
 
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -269,6 +272,95 @@ def recent_codex_files() -> list[Path]:
     return paths[:20]
 
 
+def codex_from_snapshot(snapshot: Any, source: str) -> dict[str, Any] | None:
+    if not isinstance(snapshot, dict):
+        return None
+    windows = normalized_windows(snapshot)
+    if not windows:
+        return None
+    plan = plan_name(snapshot.get("planType", snapshot.get("plan_type")))
+    return provider("codex", "Codex", True, source=source, plan=plan, windows=windows)
+
+
+def collect_codex_live() -> dict[str, Any] | None:
+    """Ask the installed Codex CLI for a current, read-only usage snapshot."""
+    if os.environ.get("AGENT_USAGE_CODEX_NETWORK") != "1":
+        return None
+    executable = shutil.which("codex")
+    if not executable:
+        return None
+
+    process = None
+    selector = None
+    try:
+        process = subprocess.Popen(
+            [executable, "app-server", "--stdio"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        if process.stdin is None or process.stdout is None:
+            return None
+        requests = (
+            {"id": 1, "method": "initialize", "params": {
+                "clientInfo": {"name": "kde-agents-usage", "version": "0.1"},
+            }},
+            {"method": "initialized"},
+            {"id": 2, "method": "account/rateLimits/read"},
+        )
+        process.stdin.write(b"".join(
+            (json.dumps(item, separators=(",", ":")) + "\n").encode("utf-8")
+            for item in requests
+        ))
+        process.stdin.flush()
+
+        selector = selectors.DefaultSelector()
+        selector.register(process.stdout, selectors.EVENT_READ)
+        deadline = time.monotonic() + CODEX_LIVE_TIMEOUT
+        pending = b""
+        while time.monotonic() < deadline:
+            ready = selector.select(deadline - time.monotonic())
+            if not ready:
+                break
+            chunk = os.read(process.stdout.fileno(), 64 * 1024)
+            if not chunk:
+                break
+            pending += chunk
+            lines = pending.split(b"\n")
+            pending = lines.pop()
+            for line in lines:
+                try:
+                    message = json.loads(line)
+                except (UnicodeDecodeError, ValueError):
+                    continue
+                if not isinstance(message, dict) or message.get("id") != 2:
+                    continue
+                result = message.get("result")
+                if not isinstance(result, dict):
+                    return None
+                by_limit = result.get("rateLimitsByLimitId")
+                snapshot = by_limit.get("codex") if isinstance(by_limit, dict) else None
+                if not isinstance(snapshot, dict):
+                    snapshot = result.get("rateLimits")
+                return codex_from_snapshot(snapshot, "Codex account")
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    finally:
+        if selector is not None:
+            selector.close()
+        if process is not None and process.poll() is None:
+            try:
+                process.terminate()
+                try:
+                    process.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=1)
+            except OSError:
+                pass
+    return None
+
+
 def reverse_lines(path: Path, maximum: int = 2 * 1024 * 1024):
     try:
         with path.open("rb") as handle:
@@ -283,6 +375,10 @@ def reverse_lines(path: Path, maximum: int = 2 * 1024 * 1024):
 
 
 def collect_codex() -> dict[str, Any]:
+    live = collect_codex_live()
+    if live:
+        return live
+
     newest: tuple[int, dict[str, Any]] | None = None
     for path in recent_codex_files():
         for line in reverse_lines(path):

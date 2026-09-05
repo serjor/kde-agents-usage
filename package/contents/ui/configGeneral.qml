@@ -11,6 +11,7 @@ KCM.SimpleKCM {
     property alias cfg_showClaude: showClaude.checked
     property alias cfg_allowClaudeNetwork: allowClaudeNetwork.checked
     property alias cfg_showCodex: showCodex.checked
+    property alias cfg_allowCodexNetwork: allowCodexNetwork.checked
     property alias cfg_showOpenCode: showOpenCode.checked
     property alias cfg_refreshMinutes: refreshMinutes.value
     property alias cfg_warningRemaining: warningRemaining.value
@@ -23,6 +24,10 @@ KCM.SimpleKCM {
         text: i18n("Allow requests to the Anthropic usage API")
     }
     PlasmaComponents.CheckBox { id: showCodex; text: "Codex" }
+    PlasmaComponents.CheckBox {
+        id: allowCodexNetwork
+        text: i18n("Fetch current Codex limits through the Codex CLI")
+    }
     PlasmaComponents.CheckBox { id: showOpenCode; text: "OpenCode" }
     PlasmaComponents.SpinBox {
         id: refreshMinutes
