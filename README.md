@@ -29,6 +29,7 @@ The panel view shows all available quota windows. Open the widget to see reset c
 | OpenAI Codex CLI | Recent local session events | Last observed five-hour and weekly windows |
 | OpenAI Codex CLI | Optional account query through the installed CLI | Current five-hour and weekly windows |
 | OpenCode | Optional local provider export | Windows from the selected provider |
+| Ollama Cloud | Optional ollama.com usage API | Session and weekly windows |
 
 OpenCode connects to different model providers. Thus, OpenCode does not have one universal quota.
 
@@ -112,6 +113,21 @@ Use this format:
 
 `used_percent` is the consumed quota. The widget converts this value to the available percentage.
 
+## Configure Ollama Cloud
+
+The widget can read your Ollama Cloud session and weekly limits from the ollama.com usage API.
+This option is off by default. Enable **Ollama Cloud** in the widget settings, then create an
+API key at [ollama.com/settings/keys](https://ollama.com/settings/keys).
+
+Provide the key through one of these places:
+
+1. The `OLLAMA_API_KEY` environment variable.
+2. A single-line file at `~/.config/kde-agents-usage/ollama-key` that contains only the key.
+
+The key is sent only to `https://ollama.com/api/usage`. The helper caches the quota values for
+one hour in `~/.cache/kde-agents-usage/ollama-usage.json` and never stores the key. The usage
+response has no reset time, so those windows show a reset state of unknown.
+
 ## Privacy and security
 
 The default configuration makes no network requests. Codex data and OpenCode provider exports stay on your computer.
@@ -121,6 +137,8 @@ The helper reads recent Codex session files. It extracts only rate-limit values,
 The Claude status-line collector stores only quota values, reset times, and the plan name. It does not store the full input.
 
 The optional Anthropic request keeps the OAuth token in memory. It does not cache the token or follow HTTP redirects.
+
+The optional Ollama request keeps the API key in memory. It does not cache the key or follow HTTP redirects.
 
 The optional Codex account query delegates the authenticated request to the installed Codex CLI.
 The widget receives only the quota snapshot and does not read Codex credentials.

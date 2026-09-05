@@ -1,17 +1,32 @@
 # SPDX-FileCopyrightText: 2026 KDE Agents Usage contributors
 # SPDX-License-Identifier: MIT
 
+import importlib.machinery
+import importlib.util
 import json
 import os
 import subprocess
+import sys
 import tempfile
+import threading
+import time
 import unittest
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / "package/contents/code/agent-usage-json"
 COLLECTOR = ROOT / "package/contents/code/claude-statusline-collector"
+
+
+def load_helper_module():
+    loader = importlib.machinery.SourceFileLoader("helper_module", str(HELPER))
+    spec = importlib.util.spec_from_loader("helper_module", loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
 
 
 def run_helper(home: Path, providers: str, extra_env=None):
@@ -166,6 +181,94 @@ for line in sys.stdin:
             opencode = run_helper(home, "opencode")["providers"][0]
             self.assertTrue(opencode["available"])
             self.assertEqual(25.0, opencode["windows"][0]["used_percent"])
+
+    def test_ollama_without_key_stays_unavailable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            ollama = run_helper(home, "ollama")["providers"][0]
+            self.assertFalse(ollama["available"])
+            self.assertEqual([], ollama["windows"])
+            self.assertIn("API key", ollama["error"])
+
+    def test_ollama_reads_key_file_and_network_response(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            key_path = home / ".config/kde-agents-usage/ollama-key"
+            key_path.parent.mkdir(parents=True)
+            key_path.write_text("synthetic-not-a-real-key\n", encoding="utf-8")
+
+            received = {}
+
+            class Handler(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    body = json.dumps({
+                        "limits": {
+                            "session": {"usage": 0.172},
+                            "weekly": {"usage": 0.121},
+                        }
+                    }).encode()
+                    received["auth"] = self.headers.get("Authorization", "")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+
+                def log_message(self, *args):
+                    pass
+
+            server = HTTPServer(("127.0.0.1", 0), Handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                module = load_helper_module()
+                module.OLLAMA_API = f"http://127.0.0.1:{server.server_port}/api/usage"
+                module.HOME = home
+                module.CACHE_DIR = home / ".cache/kde-agents-usage"
+                env = {
+                    "HOME": str(home),
+                    "XDG_CONFIG_HOME": str(home / ".config"),
+                    "XDG_CACHE_HOME": str(home / ".cache"),
+                }
+                with mock.patch.dict(os.environ, env, clear=True):
+                    result = module.collect_ollama()
+            finally:
+                server.shutdown()
+            self.assertEqual("Bearer synthetic-not-a-real-key", received.get("auth"))
+            self.assertTrue(result["available"])
+            self.assertEqual("ollama.com", result["source"])
+            self.assertEqual([17.2, 12.1], [item["used_percent"] for item in result["windows"]])
+
+    def test_ollama_uses_fresh_cache_and_never_stores_the_key(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            cache = home / ".cache/kde-agents-usage/ollama-usage.json"
+            cache.parent.mkdir(parents=True)
+            cache.write_text(json.dumps({
+                "collected_at": 4102444800,
+                "usage": {"session": 0.4, "weekly": 0.2},
+            }), encoding="utf-8")
+            key_path = home / ".config/kde-agents-usage/ollama-key"
+            key_path.parent.mkdir(parents=True)
+            key_path.write_text("synthetic-not-a-real-key\n", encoding="utf-8")
+            original = cache.read_text(encoding="utf-8")
+            module = load_helper_module()
+            module.OLLAMA_API = "http://127.0.0.1:1/api/usage"
+            module.HOME = home
+            module.CACHE_DIR = cache.parent
+            env = {
+                "HOME": str(home),
+                "XDG_CONFIG_HOME": str(home / ".config"),
+                "XDG_CACHE_HOME": str(home / ".cache"),
+                "OLLAMA_API_KEY": "synthetic-not-a-real-key",
+            }
+            with mock.patch.dict(os.environ, env, clear=True):
+                with mock.patch.object(time, "time", return_value=4102444900):
+                    result = module.collect_ollama()
+            self.assertTrue(result["available"])
+            self.assertEqual("ollama.com cache", result["source"])
+            self.assertEqual([40.0, 20.0], [item["used_percent"] for item in result["windows"]])
+            self.assertEqual(original, cache.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

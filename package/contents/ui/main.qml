@@ -32,6 +32,7 @@ PlasmoidItem {
         if (Plasmoid.configuration.showClaude) result.push("claude")
         if (Plasmoid.configuration.showCodex) result.push("codex")
         if (Plasmoid.configuration.showOpenCode) result.push("opencode")
+        if (Plasmoid.configuration.showOllama) result.push("ollama")
         return result.join(",")
     }
 

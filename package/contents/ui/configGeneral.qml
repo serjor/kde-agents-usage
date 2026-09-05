@@ -13,6 +13,7 @@ KCM.SimpleKCM {
     property alias cfg_showCodex: showCodex.checked
     property alias cfg_allowCodexNetwork: allowCodexNetwork.checked
     property alias cfg_showOpenCode: showOpenCode.checked
+    property alias cfg_showOllama: showOllama.checked
     property alias cfg_refreshMinutes: refreshMinutes.value
     property alias cfg_warningRemaining: warningRemaining.value
     property alias cfg_criticalRemaining: criticalRemaining.value
@@ -29,6 +30,7 @@ KCM.SimpleKCM {
         text: i18n("Fetch current Codex limits through the Codex CLI")
     }
     PlasmaComponents.CheckBox { id: showOpenCode; text: "OpenCode" }
+    PlasmaComponents.CheckBox { id: showOllama; text: i18n("Ollama Cloud") }
     PlasmaComponents.SpinBox {
         id: refreshMinutes
         Kirigami.FormData.label: i18n("Refresh every (minutes):")
