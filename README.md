@@ -86,6 +86,9 @@ If you already have a status-line command, connect the collector through that sc
 You can use the Anthropic usage API instead. Enable **Allow requests to the Anthropic usage API** in the widget configuration.
 
 This option is off by default. It reads the Claude OAuth token and sends it only to `https://api.anthropic.com/api/oauth/usage`.
+The endpoint rate-limits clients that do not identify as Claude Code, so the request uses the
+`claude-code/<version>` user agent of the installed CLI. The cached API values are used only while
+this option is on.
 
 ## Configure Codex
 

@@ -61,6 +61,68 @@ class HelperTests(unittest.TestCase):
             self.assertIn("optional Anthropic request", claude["error"])
             self.assertFalse((home / ".cache/kde-agents-usage/claude-api.json").exists())
 
+    def test_claude_api_cache_is_ignored_without_network_opt_in(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            (home / ".claude").mkdir()
+            cache = home / ".cache/kde-agents-usage/claude-api.json"
+            cache.parent.mkdir(parents=True)
+            cache.write_text(json.dumps({
+                "collected_at": int(time.time()),
+                "usage": {"five_hour": {"used_percent": 18, "resets_at": 4102444800}},
+            }), encoding="utf-8")
+            claude = run_helper(home, "claude")["providers"][0]
+            self.assertFalse(claude["available"])
+            self.assertEqual([], claude["windows"])
+
+    def test_claude_api_request_identifies_as_claude_code(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            credentials = home / ".claude/.credentials.json"
+            credentials.parent.mkdir(parents=True)
+            credentials.write_text(json.dumps({
+                "claudeAiOauth": {"accessToken": "synthetic-not-a-real-token"}
+            }), encoding="utf-8")
+
+            received = {}
+
+            class Handler(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    received["agent"] = self.headers.get("User-Agent", "")
+                    body = json.dumps({
+                        "five_hour": {"utilization": 53.0,
+                                      "resets_at": "2099-01-01T00:00:00.194819+00:00"},
+                        "seven_day": {"utilization": 5.0,
+                                      "resets_at": "2099-01-07T00:00:00+00:00"},
+                        "seven_day_opus": None,
+                    }).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+
+                def log_message(self, *args):
+                    pass
+
+            server = HTTPServer(("127.0.0.1", 0), Handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                module = load_helper_module()
+                module.CLAUDE_API = f"http://127.0.0.1:{server.server_port}/api/oauth/usage"
+                module.HOME = home
+                module.CACHE_DIR = home / ".cache/kde-agents-usage"
+                env = {"HOME": str(home), "PATH": "", "AGENT_USAGE_CLAUDE_NETWORK": "1"}
+                with mock.patch.dict(os.environ, env, clear=True):
+                    result = module.collect_claude()
+            finally:
+                server.shutdown()
+            self.assertEqual("claude-code/" + module.CLAUDE_FALLBACK_VERSION, received.get("agent"))
+            self.assertTrue(result["available"])
+            self.assertEqual("oauth", result["source"])
+            self.assertEqual([53.0, 5.0], [item["used_percent"] for item in result["windows"]])
+
     def test_status_line_cache_excludes_unrelated_fields(self):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)

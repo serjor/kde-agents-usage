@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 WINDOW_KEYS = ("five_hour", "seven_day", "seven_day_sonnet", "seven_day_opus")
-PERCENT_KEYS = ("used_percent", "usedPercent", "utilization")
+PERCENT_KEYS = ("used_percent", "usedPercent", "used_percentage", "utilization")
 RESET_KEYS = ("resets_at", "resetsAt", "reset_at")
 
 
