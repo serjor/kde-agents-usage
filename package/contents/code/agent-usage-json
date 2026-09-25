@@ -30,6 +30,9 @@ from typing import Any
 HOME = Path.home()
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", HOME / ".cache")) / "kde-agents-usage"
 CLAUDE_API = "https://api.anthropic.com/api/oauth/usage"
+# The usage endpoint answers 429 to every client that does not identify as
+# Claude Code, so the request reuses the installed CLI's user-agent format.
+CLAUDE_FALLBACK_VERSION = "2.1.0"
 OLLAMA_API = "https://ollama.com/api/usage"
 MAX_CACHE_AGE = 3600
 OLLAMA_TIMEOUT = 8
@@ -119,7 +122,8 @@ def plan_name(value: Any) -> str | None:
 def make_window(key: str, label: str, data: Any) -> dict[str, Any] | None:
     if not isinstance(data, dict):
         return None
-    used = percent(data.get("used_percent", data.get("usedPercent", data.get("utilization"))))
+    used = percent(data.get("used_percent", data.get("usedPercent",
+                   data.get("used_percentage", data.get("utilization")))))
     reset = timestamp(data.get("resets_at", data.get("resetsAt", data.get("reset_at"))))
     if used is None and reset is None:
         return None
@@ -216,13 +220,29 @@ def sanitized_usage(payload: Any) -> dict[str, Any] | None:
     return result
 
 
+def claude_user_agent() -> str:
+    version = CLAUDE_FALLBACK_VERSION
+    executable = shutil.which("claude")
+    if executable:
+        try:
+            output = subprocess.run(
+                [executable, "--version"], capture_output=True, text=True,
+                timeout=3, check=False,
+            ).stdout.split()
+        except (OSError, subprocess.SubprocessError):
+            output = []
+        if output and all(character.isdigit() or character == "." for character in output[0]):
+            version = output[0]
+    return "claude-code/" + version
+
+
 def fetch_claude(token: str) -> Any:
     request = urllib.request.Request(
         CLAUDE_API,
         headers={
             "Authorization": "Bearer " + token,
             "anthropic-beta": "oauth-2025-04-20",
-            "User-Agent": "kde-agents-usage/0.1",
+            "User-Agent": claude_user_agent(),
             "Accept": "application/json",
         },
     )
@@ -260,7 +280,8 @@ def collect_claude() -> dict[str, Any]:
         except (OSError, ValueError, urllib.error.URLError, urllib.error.HTTPError):
             pass
 
-    if isinstance(cached, dict):
+    # The API cache only bridges failed requests; it must not outlive the opt-in.
+    if allow_network and isinstance(cached, dict):
         collected = timestamp(cached.get("collected_at"))
         result = claude_from_payload(cached.get("usage"), "oauth cache")
         if result and collected and time.time() - collected <= MAX_CACHE_AGE:
