@@ -70,6 +70,33 @@ PlasmoidItem {
         return i18n("%1m", minutes)
     }
 
+    // Word for "today" matching the system language, so it reads like the
+    // localized weekday names (Spanish: "hoy 13:09" · "vie 18:59").
+    // Unmapped languages fall back to the untranslated widget language.
+    function todayWord() {
+        var words = {
+            ca: "avui", cs: "dnes", da: "i dag", de: "heute", es: "hoy",
+            eu: "gaur", fi: "tänään", fr: "aujourd'hui", gl: "hoxe",
+            hu: "ma", it: "oggi", ja: "今日", ko: "오늘", nb: "i dag",
+            nl: "vandaag", pl: "dzisiaj", pt: "hoje", ro: "astăzi",
+            ru: "сегодня", sv: "idag", tr: "bugün", uk: "сьогодні",
+            zh: "今天"
+        }
+        return words[Qt.locale().name.slice(0, 2)] || i18n("today")
+    }
+
+    function resetClock(timestamp) {
+        if (!timestamp) return ""
+        var date = new Date(Number(timestamp) * 1000)
+        var now = new Date(nowMs)
+        var sameDay = date.getFullYear() === now.getFullYear()
+                      && date.getMonth() === now.getMonth()
+                      && date.getDate() === now.getDate()
+        var day = sameDay ? todayWord()
+                          : Qt.locale().dayName(date.getDay(), Locale.ShortFormat)
+        return day + " " + Qt.formatTime(date, "HH:mm")
+    }
+
     function headline(providerData) {
         return providerData.windows && providerData.windows.length ? providerData.windows[0] : null
     }
@@ -112,8 +139,10 @@ PlasmoidItem {
         var values = []
         for (var i = 0; i < providerData.windows.length; ++i) {
             var windowData = providerData.windows[i]
+            var clock = root.resetClock(windowData.resets_at)
             values.push(windowData.label + ": " + formatRemaining(windowData)
-                        + " · " + countdown(windowData.resets_at))
+                        + " · " + countdown(windowData.resets_at)
+                        + (clock ? " · " + clock : ""))
         }
         return values.join("\n")
     }
@@ -459,7 +488,9 @@ PlasmoidItem {
                                         }
                                         PlasmaComponents.Label {
                                             text: quotaWindow.modelData.resets_at
-                                                  ? i18n("Resets in %1", root.countdown(quotaWindow.modelData.resets_at))
+                                                  ? i18n("Resets in %1 · %2",
+                                                         root.countdown(quotaWindow.modelData.resets_at),
+                                                         root.resetClock(quotaWindow.modelData.resets_at))
                                                   : i18n("Reset unknown")
                                             opacity: 0.65
                                             font.pointSize: Kirigami.Theme.smallFont.pointSize

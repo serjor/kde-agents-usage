@@ -12,7 +12,7 @@ The plasmoid monitors Claude Code, OpenAI Codex CLI, and OpenCode from your Linu
 ## Features
 
 - Show the remaining percentage for each available quota window.
-- Show a countdown for each quota reset.
+- Show a countdown and the reset day and time (24-hour clock) for each quota reset.
 - Select the agents that appear in the widget.
 - Set warning and critical quota levels.
 - Refresh automatically at a configurable interval.
