@@ -123,6 +123,107 @@ class HelperTests(unittest.TestCase):
             self.assertEqual("oauth", result["source"])
             self.assertEqual([53.0, 5.0], [item["used_percent"] for item in result["windows"]])
 
+    def run_claude_with_expired_token(self, home, token_status=200, lock=None):
+        credentials = home / ".claude/.credentials.json"
+        credentials.parent.mkdir(parents=True)
+        credentials.write_text(json.dumps({
+            "claudeAiOauth": {
+                "accessToken": "synthetic-expired-token",
+                "refreshToken": "synthetic-refresh-token",
+                "expiresAt": int(time.time() - 3600) * 1000,
+                "scopes": ["user:inference", "user:profile"],
+                "subscriptionType": "pro",
+            },
+            "otherField": "kept",
+        }), encoding="utf-8")
+        if lock:
+            (home / lock).mkdir()
+
+        received = {"usage_tokens": []}
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", "0"))
+                received["refresh"] = json.loads(self.rfile.read(length))
+                received["refresh_agent"] = self.headers.get("User-Agent", "")
+                body = json.dumps({
+                    "access_token": "synthetic-fresh-token",
+                    "refresh_token": "synthetic-rotated-refresh",
+                    "expires_in": 28800,
+                }).encode()
+                self.send_response(token_status)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):
+                received["usage_tokens"].append(self.headers.get("Authorization", ""))
+                body = json.dumps({"five_hour": {"utilization": 12.0,
+                                                 "resets_at": "2099-01-01T00:00:00Z"}}).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            module = load_helper_module()
+            module.CLAUDE_API = f"http://127.0.0.1:{server.server_port}/api/oauth/usage"
+            module.CLAUDE_TOKEN_API = f"http://127.0.0.1:{server.server_port}/v1/oauth/token"
+            module.HOME = home
+            module.CACHE_DIR = home / ".cache/kde-agents-usage"
+            env = {"HOME": str(home), "PATH": "", "AGENT_USAGE_CLAUDE_NETWORK": "1"}
+            with mock.patch.dict(os.environ, env, clear=True):
+                result = module.collect_claude()
+        finally:
+            server.shutdown()
+            server.server_close()
+        return result, received, json.loads(credentials.read_text(encoding="utf-8"))
+
+    def test_claude_expired_token_is_renewed_and_shared_with_claude_code(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            result, received, stored = self.run_claude_with_expired_token(home)
+            self.assertTrue(result["available"])
+            self.assertEqual(["Bearer synthetic-fresh-token"], received["usage_tokens"])
+            self.assertEqual("refresh_token", received["refresh"]["grant_type"])
+            self.assertEqual("synthetic-refresh-token", received["refresh"]["refresh_token"])
+            self.assertEqual("user:inference user:profile", received["refresh"]["scope"])
+            self.assertTrue(received["refresh_agent"].startswith("axios/"))
+            oauth = stored["claudeAiOauth"]
+            self.assertEqual("synthetic-fresh-token", oauth["accessToken"])
+            self.assertEqual("synthetic-rotated-refresh", oauth["refreshToken"])
+            self.assertGreater(oauth["expiresAt"], time.time() * 1000)
+            self.assertEqual("pro", oauth["subscriptionType"])
+            self.assertEqual("kept", stored["otherField"])
+            self.assertEqual(0o600, (home / ".claude/.credentials.json").stat().st_mode & 0o777)
+            self.assertFalse((home / ".claude/.oauth_refresh.lock").exists())
+            self.assertFalse((home / ".claude.lock").exists())
+
+    def test_claude_failed_renewal_keeps_credentials_and_explains(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            result, received, stored = self.run_claude_with_expired_token(home, token_status=400)
+            self.assertFalse(result["available"])
+            self.assertIn("expired", result["error"])
+            self.assertEqual([], received["usage_tokens"])
+            self.assertEqual("synthetic-expired-token", stored["claudeAiOauth"]["accessToken"])
+
+    def test_claude_renewal_waits_for_a_running_claude_code_refresh(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            result, received, stored = self.run_claude_with_expired_token(
+                home, lock=".claude/.oauth_refresh.lock")
+            self.assertFalse(result["available"])
+            self.assertNotIn("refresh", received)
+            self.assertEqual("synthetic-refresh-token", stored["claudeAiOauth"]["refreshToken"])
+            self.assertTrue((home / ".claude/.oauth_refresh.lock").exists())
+
     def test_status_line_cache_excludes_unrelated_fields(self):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
