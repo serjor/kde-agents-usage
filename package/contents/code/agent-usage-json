@@ -11,6 +11,7 @@ rate-limit value; missing values stay unavailable instead of becoming 0%.
 
 from __future__ import annotations
 
+import functools
 import glob
 import json
 import os
@@ -33,6 +34,17 @@ CLAUDE_API = "https://api.anthropic.com/api/oauth/usage"
 # The usage endpoint answers 429 to every client that does not identify as
 # Claude Code, so the request reuses the installed CLI's user-agent format.
 CLAUDE_FALLBACK_VERSION = "2.1.0"
+# Claude Code only renews its short-lived access token while it runs, so after
+# a night off the stored token has expired. The helper renews it the same way
+# Claude Code does and writes the result back so both keep sharing one login.
+CLAUDE_TOKEN_API = "https://platform.claude.com/v1/oauth/token"
+CLAUDE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+# The token endpoint answers 429 unless the request looks like Claude Code's
+# own HTTP client, which sends its library's default user-agent.
+CLAUDE_TOKEN_AGENT = "axios/1.15.2"
+CLAUDE_REFRESH_MARGIN = 300
+CLAUDE_REFRESH_TIMEOUT = 6
+CLAUDE_LOCK_STALE = 60
 OLLAMA_API = "https://ollama.com/api/usage"
 MAX_CACHE_AGE = 3600
 OLLAMA_TIMEOUT = 8
@@ -220,6 +232,7 @@ def sanitized_usage(payload: Any) -> dict[str, Any] | None:
     return result
 
 
+@functools.lru_cache(maxsize=None)
 def claude_user_agent() -> str:
     version = CLAUDE_FALLBACK_VERSION
     executable = shutil.which("claude")
@@ -251,6 +264,102 @@ def fetch_claude(token: str) -> Any:
         return json.loads(response.read(1024 * 1024).decode("utf-8"))
 
 
+def claude_token_expired(credentials: Any) -> bool:
+    if not isinstance(credentials, dict):
+        return False
+    oauth = credentials.get("claudeAiOauth")
+    expires = timestamp(oauth.get("expiresAt")) if isinstance(oauth, dict) else None
+    return expires is not None and expires - time.time() < CLAUDE_REFRESH_MARGIN
+
+
+def acquire_lock_directory(path: Path) -> bool:
+    """Take a lock compatible with the mkdir-based locks used by Claude Code."""
+    try:
+        path.mkdir()
+        return True
+    except FileExistsError:
+        pass
+    except OSError:
+        return False
+    try:
+        if time.time() - path.stat().st_mtime <= CLAUDE_LOCK_STALE:
+            return False
+        path.rmdir()
+        path.mkdir()
+        return True
+    except OSError:
+        return False
+
+
+def release_lock_directory(path: Path) -> None:
+    try:
+        path.rmdir()
+    except OSError:
+        pass
+
+
+def request_claude_refresh(refresh_token: str, scopes: Any) -> Any:
+    body = {"grant_type": "refresh_token", "refresh_token": refresh_token,
+            "client_id": CLAUDE_CLIENT_ID}
+    if isinstance(scopes, list) and all(isinstance(item, str) for item in scopes):
+        body["scope"] = " ".join(scopes)
+    request = urllib.request.Request(
+        CLAUDE_TOKEN_API,
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept": "application/json",
+                 "User-Agent": CLAUDE_TOKEN_AGENT},
+        method="POST",
+    )
+    opener = urllib.request.build_opener(NoRedirectHandler())
+    with opener.open(request, timeout=CLAUDE_REFRESH_TIMEOUT) as response:
+        return json.loads(response.read(1024 * 1024).decode("utf-8"))
+
+
+def refresh_claude_token(credentials_path: Path) -> str | None:
+    """Renew an expired Claude Code access token and store it for Claude Code too."""
+    config_dir = credentials_path.parent
+    locks = [config_dir / ".oauth_refresh.lock",
+             Path(str(config_dir.resolve()) + ".lock")]
+    taken = []
+    try:
+        for lock in locks:
+            if not acquire_lock_directory(lock):
+                return None
+            taken.append(lock)
+        # Another process may have renewed the token while the lock was busy.
+        credentials = read_json(credentials_path)
+        if not claude_token_expired(credentials):
+            return extract_claude_token(credentials)
+        oauth = credentials["claudeAiOauth"]
+        refresh_token = oauth.get("refreshToken")
+        if not isinstance(refresh_token, str) or not refresh_token:
+            return None
+        try:
+            payload = request_claude_refresh(refresh_token, oauth.get("scopes"))
+        except (OSError, ValueError, urllib.error.URLError, urllib.error.HTTPError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        access_token = payload.get("access_token")
+        expires_in = payload.get("expires_in")
+        if not isinstance(access_token, str) or not access_token or not isinstance(expires_in, (int, float)):
+            return None
+        now_ms = int(time.time() * 1000)
+        oauth["accessToken"] = access_token
+        oauth["expiresAt"] = now_ms + int(expires_in * 1000)
+        new_refresh = payload.get("refresh_token")
+        if isinstance(new_refresh, str) and new_refresh:
+            oauth["refreshToken"] = new_refresh
+        refresh_expires_in = payload.get("refresh_token_expires_in")
+        if isinstance(refresh_expires_in, (int, float)):
+            oauth["refreshTokenExpiresAt"] = now_ms + int(refresh_expires_in * 1000)
+        write_private_json(credentials_path, credentials)
+        return access_token
+    finally:
+        for lock in reversed(taken):
+            release_lock_directory(lock)
+
+
 def collect_claude() -> dict[str, Any]:
     statusline_path = CACHE_DIR / "claude-statusline.json"
     statusline = read_json(statusline_path)
@@ -263,11 +372,15 @@ def collect_claude() -> dict[str, Any]:
     api_cache_path = CACHE_DIR / "claude-api.json"
     cached = read_json(api_cache_path)
     allow_network = os.environ.get("AGENT_USAGE_CLAUDE_NETWORK") == "1"
+    token = None
+    token_expired = False
     if allow_network:
         credentials_path = Path(os.environ.get("CLAUDE_CONFIG_DIR", HOME / ".claude")) / ".credentials.json"
-        token = extract_claude_token(read_json(credentials_path))
-    else:
-        token = None
+        credentials = read_json(credentials_path)
+        token = extract_claude_token(credentials)
+        if token and claude_token_expired(credentials):
+            token = refresh_claude_token(credentials_path)
+            token_expired = token is None
     if allow_network and token:
         try:
             payload = fetch_claude(token)
@@ -288,7 +401,10 @@ def collect_claude() -> dict[str, Any]:
             return result
 
     installed = executable_exists("claude") or (HOME / ".claude").exists()
-    if installed and not allow_network:
+    if token_expired:
+        message = ("The Claude sign-in has expired and could not be renewed. Open Claude Code "
+                   "once to renew it.")
+    elif installed and not allow_network:
         message = ("Claude is detected. Enable the local status-line collector or allow the "
                    "optional Anthropic request in the widget settings.")
     elif installed:

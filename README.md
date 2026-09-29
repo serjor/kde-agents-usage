@@ -90,6 +90,12 @@ The endpoint rate-limits clients that do not identify as Claude Code, so the req
 `claude-code/<version>` user agent of the installed CLI. The cached API values are used only while
 this option is on.
 
+Claude Code renews its short-lived access token only while it runs, so the stored token has usually
+expired after the computer was off. When that happens, the helper renews it with the stored refresh
+token at `https://platform.claude.com/v1/oauth/token`, as Claude Code does, and writes the new tokens
+back to `~/.claude/.credentials.json` so Claude Code keeps working with them. It takes the same lock
+files as Claude Code and skips the renewal while Claude Code is renewing the token itself.
+
 ## Configure Codex
 
 By default, the widget reads quota events from local Codex session files. A reset made outside an
@@ -148,6 +154,7 @@ The helper reads recent Codex session files. It extracts only rate-limit values,
 The Claude status-line collector stores only quota values, reset times, and the plan name. It does not store the full input.
 
 The optional Anthropic request keeps the OAuth token in memory. It does not cache the token or follow HTTP redirects.
+A renewed token is written only to the Claude Code credentials file, with user-only permissions.
 
 The optional Ollama request keeps the API key in memory. It does not cache the key or follow HTTP redirects.
 

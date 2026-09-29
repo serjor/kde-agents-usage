@@ -21,7 +21,7 @@ Security fixes apply to the latest revision on the default branch. Older revisio
 
 The default configuration uses local data sources and makes no network requests.
 
-Optional Anthropic API access requires explicit user consent. The helper sends the OAuth token only to the configured HTTPS endpoint.
+Optional Anthropic API access requires explicit user consent. The helper sends the OAuth token only to the configured HTTPS endpoint. When the access token has expired, it sends the refresh token only to the Claude OAuth token endpoint and stores the renewed tokens only in the Claude Code credentials file.
 
 Optional Codex account access also requires explicit user consent. The helper delegates the request to the installed Codex CLI and does not read Codex credentials.
 
