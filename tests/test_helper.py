@@ -38,6 +38,8 @@ def run_helper(home: Path, providers: str, extra_env=None):
     env["XDG_CONFIG_HOME"] = str(home / ".config")
     env["XDG_DATA_HOME"] = str(home / ".local/share")
     env["AGENT_USAGE_PROVIDERS"] = providers
+    # Keep secret-tool away from the developer's real wallet.
+    env["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=/nonexistent"
     if extra_env:
         env.update(extra_env)
     result = subprocess.run(
@@ -352,6 +354,69 @@ for line in sys.stdin:
             self.assertFalse(ollama["available"])
             self.assertEqual([], ollama["windows"])
             self.assertIn("API key", ollama["error"])
+            self.assertTrue(ollama["needs_setup"])
+
+    def test_ollama_reads_key_from_secret_service(self):
+        module = load_helper_module()
+        calls = []
+
+        def fake_run(command, **kwargs):
+            calls.append((command, kwargs.get("input")))
+            return subprocess.CompletedProcess(command, 0, "synthetic-not-a-real-key\n", "")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            env = {"HOME": temporary, "XDG_CONFIG_HOME": temporary}
+            with mock.patch.dict(os.environ, env, clear=True), \
+                    mock.patch.object(module.subprocess, "run", side_effect=fake_run):
+                self.assertEqual("synthetic-not-a-real-key", module.ollama_api_key())
+        self.assertEqual(["secret-tool", "lookup", *module.OLLAMA_SECRET], calls[0][0])
+
+    def test_ollama_current_plan_shows_included_credit(self):
+        module = load_helper_module()
+        windows = module.ollama_windows({
+            "included": {
+                "balance_usd": 72.5,
+                "allowance_usd": 100,
+                "period": {"from": "2100-01-01T00:00:00Z", "until": "2100-02-01T00:00:00Z"},
+            },
+            "purchased": {"balance_usd": 25},
+        })
+        self.assertEqual([{"key": "$", "label": "Included credit", "used_percent": 27.5,
+                           "resets_at": 4105123200}], windows)
+
+    def test_ollama_rejected_key_asks_for_a_new_one(self):
+        module = load_helper_module()
+        rejected = module.urllib.error.HTTPError(module.OLLAMA_API, 401, "Unauthorized", {}, None)
+        with tempfile.TemporaryDirectory() as temporary:
+            module.CACHE_DIR = Path(temporary)
+            with mock.patch.object(module, "ollama_api_key", return_value="synthetic-not-a-real-key"), \
+                    mock.patch.object(module, "fetch_ollama", side_effect=rejected):
+                result = module.collect_ollama()
+        self.assertFalse(result["available"])
+        self.assertTrue(result["needs_setup"])
+        self.assertIn("rejected", result["error"])
+
+    def test_storing_ollama_key_keeps_it_out_of_arguments(self):
+        module = load_helper_module()
+        calls = []
+        stored = {}
+
+        def fake_run(command, **kwargs):
+            calls.append(command)
+            if command[0] == "kdialog":
+                return subprocess.CompletedProcess(command, 0, "synthetic-not-a-real-key\n", "")
+            if command[1] == "store":
+                stored["key"] = kwargs.get("input")
+                return subprocess.CompletedProcess(command, 0, "", "")
+            return subprocess.CompletedProcess(command, 0, stored.get("key", ""), "")
+
+        with mock.patch.object(module.shutil, "which", return_value="/usr/bin/secret-tool"), \
+                mock.patch.object(module.subprocess, "run", side_effect=fake_run), \
+                mock.patch("sys.stdout") as stdout:
+            module.manage_ollama_key("store")
+        self.assertEqual("synthetic-not-a-real-key", stored["key"])
+        self.assertTrue(all("synthetic-not-a-real-key" not in " ".join(command) for command in calls))
+        stdout.write.assert_any_call("stored")
 
     def test_ollama_reads_key_file_and_network_response(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -365,10 +430,13 @@ for line in sys.stdin:
             class Handler(BaseHTTPRequestHandler):
                 def do_GET(self):
                     body = json.dumps({
-                        "limits": {
-                            "session": {"usage": 0.172},
-                            "weekly": {"usage": 0.121},
-                        }
+                        "included": {
+                            "session": {"remaining_percent": 82.8,
+                                        "resets_at": "2100-01-01T00:00:00Z"},
+                            "weekly": {"remaining_percent": 87.9,
+                                       "resets_at": "2100-01-04T00:00:00Z"},
+                        },
+                        "purchased": {"balance_usd": 0},
                     }).encode()
                     received["auth"] = self.headers.get("Authorization", "")
                     self.send_response(200)
@@ -385,7 +453,7 @@ for line in sys.stdin:
             thread.start()
             try:
                 module = load_helper_module()
-                module.OLLAMA_API = f"http://127.0.0.1:{server.server_port}/api/usage"
+                module.OLLAMA_API = f"http://127.0.0.1:{server.server_port}/api/balance"
                 module.HOME = home
                 module.CACHE_DIR = home / ".cache/kde-agents-usage"
                 env = {
@@ -393,7 +461,8 @@ for line in sys.stdin:
                     "XDG_CONFIG_HOME": str(home / ".config"),
                     "XDG_CACHE_HOME": str(home / ".cache"),
                 }
-                with mock.patch.dict(os.environ, env, clear=True):
+                with mock.patch.dict(os.environ, env, clear=True), \
+                        mock.patch.object(module, "secret_ollama_key", return_value=None):
                     result = module.collect_ollama()
             finally:
                 server.shutdown()
@@ -401,6 +470,9 @@ for line in sys.stdin:
             self.assertTrue(result["available"])
             self.assertEqual("ollama.com", result["source"])
             self.assertEqual([17.2, 12.1], [item["used_percent"] for item in result["windows"]])
+            self.assertEqual([4102444800, 4102704000], [item["resets_at"] for item in result["windows"]])
+            cache = json.loads((home / ".cache/kde-agents-usage/ollama-usage.json").read_text())
+            self.assertNotIn("synthetic-not-a-real-key", json.dumps(cache))
 
     def test_ollama_uses_fresh_cache_and_never_stores_the_key(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -409,14 +481,17 @@ for line in sys.stdin:
             cache.parent.mkdir(parents=True)
             cache.write_text(json.dumps({
                 "collected_at": 4102444800,
-                "usage": {"session": 0.4, "weekly": 0.2},
+                "windows": [
+                    {"key": "5h", "label": "5 hours", "used_percent": 40.0, "resets_at": 4102444800},
+                    {"key": "7d", "label": "7 days", "used_percent": 20.0, "resets_at": None},
+                ],
             }), encoding="utf-8")
             key_path = home / ".config/kde-agents-usage/ollama-key"
             key_path.parent.mkdir(parents=True)
             key_path.write_text("synthetic-not-a-real-key\n", encoding="utf-8")
             original = cache.read_text(encoding="utf-8")
             module = load_helper_module()
-            module.OLLAMA_API = "http://127.0.0.1:1/api/usage"
+            module.OLLAMA_API = "http://127.0.0.1:1/api/balance"
             module.HOME = home
             module.CACHE_DIR = cache.parent
             env = {
