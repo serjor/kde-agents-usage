@@ -63,7 +63,7 @@ Run `./install.sh` again to install an update.
 
 ### Install from a release file
 
-Download the `.plasmoid` file from [GitHub releases](https://github.com/kdeagentsusage/kde-agents-usage/releases) and install it:
+Download the `.plasmoid` file from [GitHub releases](https://github.com/serjor/kde-agents-usage/releases) and install it:
 
 ```bash
 kpackagetool6 --type Plasma/Applet --upgrade <file>.plasmoid

@@ -59,7 +59,7 @@ SPDX-License-Identifier: MIT
       "operatingSystem": "Linux (KDE Plasma 6)",
       "softwareVersion": "@VERSION@",
       "dateModified": "@LASTMOD@",
-      "downloadUrl": "https://github.com/serjor/kde-agents-usage/releases/latest",
+      "downloadUrl": "https://github.com/serjor/kde-agents-usage/releases/download/v@VERSION@/io.github.kde-agents-usage-@VERSION@.plasmoid",
       "installUrl": "https://serjor.github.io/kde-agents-usage/#install",
       "softwareRequirements": "KDE Plasma 6, Python 3.10+, kpackagetool6",
       "license": "https://opensource.org/licenses/MIT",
@@ -308,7 +308,7 @@ footer a{color:var(--soft)}
       <div>
         <p>Agents Usage is a free widget for KDE Plasma 6. It shows how much quota you have left in Claude Code, OpenAI Codex CLI, OpenCode and Ollama Cloud, and when each limit resets.</p>
         <div class="actions">
-          <a class="download" href="https://github.com/serjor/kde-agents-usage/releases/latest/download/io.github.kde-agents-usage-@VERSION@.plasmoid">Download the .plasmoid<small>v@VERSION@</small></a>
+          <a class="download" href="https://github.com/serjor/kde-agents-usage/releases/download/v@VERSION@/io.github.kde-agents-usage-@VERSION@.plasmoid">Download the .plasmoid<small>v@VERSION@</small></a>
           <a href="https://github.com/serjor/kde-agents-usage">Source on GitHub</a>
         </div>
       </div>
@@ -417,7 +417,7 @@ footer a{color:var(--soft)}
           <ol class="steps">
             <li>
               <h3>Install the package</h3>
-              <p>Download the <code>.plasmoid</code> file from the <a href="https://github.com/serjor/kde-agents-usage/releases/latest">latest release</a> and run:</p>
+              <p>Download the <code>.plasmoid</code> file from <a href="https://github.com/serjor/kde-agents-usage/releases/tag/v@VERSION@">release @VERSION@</a> and run:</p>
 <pre><code>kpackagetool6 --type Plasma/Applet --upgrade io.github.kde-agents-usage-@VERSION@.plasmoid</code></pre>
               <p>Or install from source, and run the script again later to update:</p>
 <pre><code>git clone https://github.com/serjor/kde-agents-usage.git
