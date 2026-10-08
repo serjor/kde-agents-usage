@@ -5,8 +5,8 @@
   "start_url": "/kde-agents-usage/",
   "scope": "/kde-agents-usage/",
   "display": "browser",
-  "background_color": "#11161d",
-  "theme_color": "#1d99f3",
+  "background_color": "#eff0f1",
+  "theme_color": "#232629",
   "icons": [
     { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
