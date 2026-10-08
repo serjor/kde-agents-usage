@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://serjor.github.io/kde-agents-usage/sitemap.xml

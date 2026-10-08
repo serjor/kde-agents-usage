@@ -1,0 +1,15 @@
+# Agents Usage
+
+> Free, open-source KDE Plasma 6 widget (plasmoid) that shows remaining usage quota and reset times for AI coding agents on Linux: Claude Code, OpenAI Codex CLI, OpenCode and Ollama Cloud. MIT licensed, no telemetry, offline by default.
+
+- Claude Code: five-hour, weekly, Sonnet and Opus windows via a local status-line collector or the optional Anthropic usage API.
+- OpenAI Codex CLI: five-hour and weekly rate limits from local session events or a live query through the Codex CLI.
+- OpenCode: provider quotas from a local export file.
+- Ollama Cloud: session, weekly or credit usage from the ollama.com balance API.
+
+## Links
+
+- [Website](https://serjor.github.io/kde-agents-usage/)
+- [Source code and documentation](https://github.com/serjor/kde-agents-usage#readme)
+- [Latest release](https://github.com/serjor/kde-agents-usage/releases/latest)
+- [Security policy](https://github.com/serjor/kde-agents-usage/blob/main/SECURITY.md)

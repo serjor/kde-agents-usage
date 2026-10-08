@@ -1,0 +1,15 @@
+{
+  "name": "Agents Usage",
+  "short_name": "Agents Usage",
+  "description": "Claude Code, Codex CLI, OpenCode and Ollama Cloud quota monitor for KDE Plasma 6",
+  "start_url": "/kde-agents-usage/",
+  "scope": "/kde-agents-usage/",
+  "display": "browser",
+  "background_color": "#eff0f1",
+  "theme_color": "#232629",
+  "icons": [
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
