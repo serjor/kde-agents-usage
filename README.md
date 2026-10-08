@@ -9,6 +9,8 @@ Agents Usage is an open-source KDE Plasma 6 widget for AI coding-agent quotas an
 
 The plasmoid monitors Claude Code, OpenAI Codex CLI, and OpenCode from your Linux desktop. It has no telemetry or analytics.
 
+Website: [serjor.github.io/kde-agents-usage](https://serjor.github.io/kde-agents-usage/)
+
 ## Features
 
 - Show the remaining percentage for each available quota window.

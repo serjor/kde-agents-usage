@@ -1,0 +1,75 @@
+# SPDX-FileCopyrightText: 2026 KDE Agents Usage contributors
+# SPDX-License-Identifier: MIT
+
+name: Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Get the source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Fill in the version and modification date
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          version="${tag#v}"
+          case "$version" in
+            "" | .* | *[!0-9.]*)
+              echo "Error: latest release tag $tag is not a version like v1.2.3." >&2
+              exit 1
+              ;;
+          esac
+          lastmod="$(date -u +%Y-%m-%d)"
+          mkdir _site
+          cp -r site/. _site/
+          sed -i -e "s/@VERSION@/${version}/g" -e "s/@LASTMOD@/${lastmod}/g" _site/index.html _site/sitemap.xml
+          if grep -rq '@VERSION@\|@LASTMOD@' _site; then
+            echo "Error: unreplaced placeholders remain." >&2
+            exit 1
+          fi
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

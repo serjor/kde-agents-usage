@@ -1,0 +1,506 @@
+<!doctype html>
+<!--
+SPDX-FileCopyrightText: 2026 KDE Agents Usage contributors
+SPDX-License-Identifier: MIT
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code &amp; Codex Usage Monitor for KDE Plasma 6 | Agents Usage</title>
+<meta name="description" content="Free, open-source KDE Plasma 6 widget that shows your Claude Code, OpenAI Codex CLI, OpenCode and Ollama Cloud usage limits, remaining quota and reset times on the Linux desktop. No telemetry.">
+<meta name="keywords" content="Claude Code usage monitor, Claude Code usage limit, Claude Code quota, Claude 5-hour limit reset, Codex CLI rate limits, OpenAI Codex usage, OpenCode quota, Ollama Cloud usage, KDE Plasma 6 widget, plasmoid, Linux AI coding agent, AI usage tracker">
+<meta name="author" content="KDE Agents Usage contributors">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<meta name="theme-color" content="#1d99f3">
+<meta name="color-scheme" content="light dark">
+<link rel="canonical" href="https://serjor.github.io/kde-agents-usage/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Agents Usage">
+<meta property="og:locale" content="en_US">
+<meta property="og:url" content="https://serjor.github.io/kde-agents-usage/">
+<meta property="og:title" content="Agents Usage — Claude Code &amp; Codex quota monitor for KDE Plasma 6">
+<meta property="og:description" content="See your remaining Claude Code, Codex CLI, OpenCode and Ollama Cloud quota and the exact reset time right in your KDE Plasma panel. Free, open source, no telemetry.">
+<meta property="og:image" content="https://serjor.github.io/kde-agents-usage/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Agents Usage widget showing Claude Code, Codex and OpenCode quota bars with reset countdowns">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Agents Usage — Claude Code &amp; Codex quota monitor for KDE Plasma 6">
+<meta name="twitter:description" content="Remaining quota and reset times for Claude Code, Codex CLI, OpenCode and Ollama Cloud in your Plasma panel.">
+<meta name="twitter:image" content="https://serjor.github.io/kde-agents-usage/og-image.png">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://serjor.github.io/kde-agents-usage/#website",
+      "url": "https://serjor.github.io/kde-agents-usage/",
+      "name": "Agents Usage",
+      "alternateName": ["KDE Agents Usage", "kde-agents-usage"],
+      "inLanguage": "en"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://serjor.github.io/kde-agents-usage/#software",
+      "name": "Agents Usage",
+      "alternateName": "KDE Agents Usage",
+      "description": "KDE Plasma 6 widget (plasmoid) that monitors usage limits, remaining quota and reset times for AI coding agents: Claude Code, OpenAI Codex CLI, OpenCode and Ollama Cloud.",
+      "url": "https://serjor.github.io/kde-agents-usage/",
+      "applicationCategory": "DeveloperApplication",
+      "applicationSubCategory": "KDE Plasma widget",
+      "operatingSystem": "Linux (KDE Plasma 6)",
+      "softwareVersion": "@VERSION@",
+      "dateModified": "@LASTMOD@",
+      "downloadUrl": "https://github.com/serjor/kde-agents-usage/releases/latest",
+      "installUrl": "https://serjor.github.io/kde-agents-usage/#install",
+      "softwareRequirements": "KDE Plasma 6, Python 3.10+, kpackagetool6",
+      "license": "https://opensource.org/licenses/MIT",
+      "isAccessibleForFree": true,
+      "codeRepository": "https://github.com/serjor/kde-agents-usage",
+      "programmingLanguage": ["QML", "Python"],
+      "image": "https://serjor.github.io/kde-agents-usage/og-image.png",
+      "screenshot": "https://serjor.github.io/kde-agents-usage/og-image.png",
+      "keywords": "Claude Code, Codex CLI, OpenCode, Ollama Cloud, usage limit, quota, rate limit, KDE Plasma 6, plasmoid, Linux",
+      "featureList": [
+        "Remaining percentage for every quota window",
+        "Reset countdown and local reset day and time",
+        "Claude Code five-hour, weekly, Sonnet and Opus windows",
+        "OpenAI Codex CLI five-hour and weekly rate limits",
+        "OpenCode provider quotas",
+        "Ollama Cloud session, weekly and credit usage",
+        "Configurable warning and critical levels",
+        "No telemetry, no network requests by default"
+      ],
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "author": {
+        "@type": "Organization",
+        "name": "KDE Agents Usage contributors",
+        "url": "https://github.com/serjor/kde-agents-usage"
+      }
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://serjor.github.io/kde-agents-usage/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How can I see my Claude Code usage limit on Linux?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Install the Agents Usage widget on KDE Plasma 6 and connect its local status-line collector in ~/.claude/settings.json. The panel then shows the remaining percentage of your Claude Code five-hour and weekly windows, plus Sonnet and Opus windows when available."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "When does my Claude Code five-hour limit reset?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Agents Usage shows a live countdown and the local reset day and time (24-hour clock) for every Claude Code quota window, so you know exactly when the five-hour and weekly limits reset."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I check OpenAI Codex CLI rate limits from the desktop?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. By default the widget reads the last rate-limit event from local Codex session files. You can also enable a live query through the installed Codex CLI to see the current five-hour and weekly limits immediately."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Agents Usage send my data anywhere?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. The default configuration makes no network requests and the project has no telemetry or analytics. Optional API sources are off by default and only contact the official Anthropic or Ollama endpoints."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does it work with OpenCode and Ollama Cloud?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. OpenCode quotas come from a small local provider export file, and Ollama Cloud usage comes from the ollama.com balance API with the API key stored in KWallet or another Secret Service provider."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is Agents Usage free?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Agents Usage is free and open-source software under the MIT License, available on GitHub."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+
+<style>
+:root{
+  --bg:#f5f7fa;--surface:#ffffff;--surface-2:#eef2f6;--text:#16202c;--muted:#5b6878;--line:#d9e0e8;
+  --accent:#1477c4;--accent-strong:#0f5f9e;--on-accent:#ffffff;--accent-soft:#e3f1fc;
+  --good:#1b8a4f;--warn:#a26a00;--danger:#c0392b;--code:#e9edf2;
+  --panel:#232a33;--panel-card:#2d3540;--panel-line:#414b58;--panel-text:#eef2f6;--panel-muted:#a7b2c0;--track:#4a5462;
+  --p-good:#3fd28a;--p-warn:#f6c454;--p-danger:#ff7d6e;
+  --shadow:0 18px 50px rgba(22,32,44,.10);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#11161d;--surface:#18202a;--surface-2:#1f2935;--text:#e9eef4;--muted:#9eabba;--line:#2e3a48;
+    --accent:#5bb4f5;--accent-strong:#8ccbf8;--on-accent:#0b1a26;--accent-soft:#16324a;
+    --good:#55d69a;--warn:#f2c461;--danger:#ff9488;--code:#222d3a;
+    --panel:#1b2129;--panel-card:#252d37;--panel-line:#38434f;
+    --shadow:0 18px 50px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#11161d;--surface:#18202a;--surface-2:#1f2935;--text:#e9eef4;--muted:#9eabba;--line:#2e3a48;
+  --accent:#5bb4f5;--accent-strong:#8ccbf8;--on-accent:#0b1a26;--accent-soft:#16324a;
+  --good:#55d69a;--warn:#f2c461;--danger:#ff9488;--code:#222d3a;
+  --panel:#1b2129;--panel-card:#252d37;--panel-line:#38434f;
+  --shadow:0 18px 50px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 "Noto Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow-x:clip}
+a{color:var(--accent);text-underline-offset:.18em}
+a:hover{color:var(--accent-strong)}
+img,svg{max-width:100%}
+code{background:var(--code);border-radius:5px;padding:.1em .35em;font:.88em/1.5 "Hack","JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{margin:.8rem 0;background:var(--code);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:.85rem 1rem;overflow-x:auto}
+pre code{background:none;padding:0;font-size:.86rem}
+.wrap{max-width:72rem;margin:0 auto;padding:0 16px}
+.skip{position:absolute;left:-999px}.skip:focus{left:16px;top:16px;z-index:10;background:var(--surface);padding:.5rem 1rem;border-radius:6px}
+
+/* header */
+.site-header{border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(10px);position:sticky;top:0;z-index:5}
+.site-header .wrap{display:flex;align-items:center;justify-content:space-between;gap:1rem;height:3.6rem}
+.brand{display:flex;align-items:center;gap:.55rem;font-weight:750;color:var(--text);text-decoration:none;letter-spacing:-.01em}
+.brand svg{width:26px;height:26px}
+.site-nav{display:flex;gap:1.2rem;align-items:center}
+.site-nav a{color:var(--muted);text-decoration:none;font-size:.92rem;font-weight:600}
+.site-nav a:hover{color:var(--text)}
+.site-nav .gh{color:var(--text);border:1px solid var(--line);padding:.32rem .75rem;border-radius:999px;background:var(--surface)}
+@media (max-width:720px){.site-nav a:not(.gh){display:none}}
+
+/* hero */
+.hero{padding:4.5rem 0 3.5rem}
+.hero .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:3rem;align-items:center}
+.eyebrow{margin:0 0 .8rem;color:var(--accent);font-size:.8rem;font-weight:750;letter-spacing:.12em;text-transform:uppercase}
+h1{font-size:clamp(2.1rem,5.2vw,3.5rem);line-height:1.06;letter-spacing:-.035em;margin:0 0 1.1rem}
+h1 .hl{color:var(--accent)}
+.lede{font-size:1.15rem;color:var(--muted);margin:0 0 1.8rem;max-width:36rem}
+.cta{display:flex;flex-wrap:wrap;gap:.75rem}
+.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.75rem 1.2rem;border-radius:10px;font-weight:700;text-decoration:none;border:1px solid transparent}
+.btn-primary{background:var(--accent);color:var(--on-accent)}
+.btn-primary:hover{background:var(--accent-strong);color:var(--on-accent)}
+.btn-ghost{border-color:var(--line);color:var(--text);background:var(--surface)}
+.btn-ghost:hover{color:var(--text);border-color:var(--muted)}
+.trust{display:flex;flex-wrap:wrap;gap:.5rem 1.2rem;margin:1.6rem 0 0;padding:0;list-style:none;color:var(--muted);font-size:.9rem}
+.trust li::before{content:"✓ ";color:var(--good);font-weight:800}
+
+/* widget mockup (real text, rendered in HTML) */
+.mock{background:var(--panel);color:var(--panel-text);border:1px solid var(--panel-line);border-radius:18px;padding:1.1rem;box-shadow:var(--shadow);font-size:.9rem}
+.mock-head{display:flex;justify-content:space-between;align-items:center;margin:0 .2rem .9rem}
+.mock-head strong{font-size:1.05rem}
+.mock-head span{color:var(--panel-muted);font-size:.8rem}
+.mock-card{background:var(--panel-card);border:1px solid var(--panel-line);border-radius:12px;padding:.85rem .95rem;margin-top:.6rem}
+.mock-row{display:flex;justify-content:space-between;align-items:baseline;gap:.5rem}
+.mock-name{display:flex;align-items:center;gap:.5rem;font-weight:700}
+.dot{width:.6rem;height:.6rem;border-radius:50%;display:inline-block}
+.plan{font-size:.68rem;font-weight:800;letter-spacing:.08em;color:var(--panel-muted);border:1px solid var(--panel-line);border-radius:999px;padding:.05rem .45rem}
+.win{margin-top:.55rem}
+.win-top{display:flex;justify-content:space-between;color:var(--panel-muted);font-size:.8rem}
+.win-top b{color:var(--panel-text);font-size:.95rem}
+.bar{height:7px;border-radius:5px;background:var(--track);margin:.3rem 0 .25rem;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:5px}
+.reset{color:var(--panel-muted);font-size:.76rem}
+.g{background:var(--p-good)}.w{background:var(--p-warn)}.d{background:var(--p-danger)}
+.tg{color:var(--p-good)}.tw{color:var(--p-warn)}.td{color:var(--p-danger)}
+
+/* sections */
+section{padding:3.5rem 0}
+section.alt{background:var(--surface);border-block:1px solid var(--line)}
+h2{font-size:clamp(1.6rem,3.4vw,2.2rem);line-height:1.15;letter-spacing:-.025em;margin:0 0 .7rem}
+h3{font-size:1.1rem;line-height:1.3;margin:0 0 .4rem}
+.section-lede{color:var(--muted);max-width:44rem;margin:0 0 2rem;font-size:1.05rem}
+.grid{display:grid;gap:1rem;grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:1.3rem}
+section.alt .card{background:var(--bg)}
+.card p{margin:0;color:var(--muted)}
+.icon{width:2.4rem;height:2.4rem;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;margin-bottom:.8rem}
+.icon svg{width:1.3rem;height:1.3rem}
+
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:38rem}
+th,td{text-align:left;padding:.75rem 1rem;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:var(--surface-2);font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+tr:last-child td{border-bottom:0}
+td:first-child{font-weight:700;white-space:nowrap}
+
+.steps{counter-reset:s;display:grid;gap:1rem;grid-template-columns:repeat(2,minmax(0,1fr))}
+.step{position:relative;padding-left:3rem}
+.step::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:0;width:2.1rem;height:2.1rem;border-radius:50%;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;font-weight:800}
+.step p{color:var(--muted);margin:.2rem 0}
+
+.privacy{display:grid;grid-template-columns:1fr 1fr;gap:2rem;align-items:start}
+.checklist{list-style:none;padding:0;margin:0}
+.checklist li{padding:.55rem 0 .55rem 1.8rem;border-bottom:1px solid var(--line);position:relative}
+.checklist li::before{content:"";position:absolute;left:.2rem;top:.95rem;width:.9rem;height:.5rem;border-left:3px solid var(--good);border-bottom:3px solid var(--good);transform:rotate(-45deg)}
+
+details{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:0 1.2rem;margin-top:.7rem}
+section.alt details{background:var(--bg)}
+summary{cursor:pointer;font-weight:700;padding:1rem 0;list-style-position:outside}
+details p{margin:0 0 1rem;color:var(--muted)}
+
+.final{text-align:center}
+.final .cta{justify-content:center}
+footer{border-top:1px solid var(--line);padding:2rem 0;color:var(--muted);font-size:.88rem}
+footer .wrap{display:flex;flex-wrap:wrap;gap:.6rem 1.5rem;justify-content:space-between}
+footer nav{display:flex;flex-wrap:wrap;gap:.4rem 1.2rem}
+
+@media (max-width:900px){
+  .hero{padding:2.5rem 0}
+  .hero .wrap,.privacy{grid-template-columns:1fr;gap:2rem}
+  .grid,.steps{grid-template-columns:1fr}
+}
+@media (min-width:600px) and (max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="./" aria-label="Agents Usage home">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#1d99f3"/><rect x="7" y="18" width="4" height="7" rx="1.5" fill="#fff"/><rect x="14" y="12" width="4" height="13" rx="1.5" fill="#fff"/><rect x="21" y="7" width="4" height="18" rx="1.5" fill="#fff"/></svg>
+      Agents Usage
+    </a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="#features">Features</a>
+      <a href="#agents">Supported agents</a>
+      <a href="#install">Install</a>
+      <a href="#faq">FAQ</a>
+      <a class="gh" href="https://github.com/serjor/kde-agents-usage">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap">
+      <div>
+        <p class="eyebrow">Free KDE Plasma 6 widget · Linux</p>
+        <h1 id="hero-title">Claude Code &amp; Codex <span class="hl">usage limits</span> in your Plasma panel</h1>
+        <p class="lede">Agents Usage is an open-source plasmoid that shows how much quota you have left in <strong>Claude Code</strong>, <strong>OpenAI Codex CLI</strong>, <strong>OpenCode</strong> and <strong>Ollama Cloud</strong> — and exactly when each limit resets. No more hitting the five-hour wall by surprise.</p>
+        <div class="cta">
+          <a class="btn btn-primary" href="https://github.com/serjor/kde-agents-usage/releases/latest/download/io.github.kde-agents-usage-@VERSION@.plasmoid">Download v@VERSION@ (.plasmoid)</a>
+          <a class="btn btn-ghost" href="https://github.com/serjor/kde-agents-usage">View source on GitHub</a>
+        </div>
+        <ul class="trust">
+          <li>MIT licensed</li>
+          <li>No telemetry</li>
+          <li>Offline by default</li>
+          <li>No Python dependencies</li>
+        </ul>
+      </div>
+
+      <figure class="mock" role="img" aria-label="Example of the Agents Usage popup: Claude Code 72% of the five-hour window available, Codex 24% available, OpenCode 8% available, each with a reset countdown.">
+        <div class="mock-head"><strong>Available quota</strong><span>Updated now</span></div>
+        <div class="mock-card">
+          <div class="mock-row"><span class="mock-name"><i class="dot g"></i>Claude Code</span><span class="plan">MAX</span></div>
+          <div class="win"><div class="win-top"><span>5-hour window</span><b class="tg">72%</b></div><div class="bar"><i class="g" style="width:72%"></i></div><div class="reset">Resets in 2h 14m · today 18:40</div></div>
+          <div class="win"><div class="win-top"><span>Weekly</span><b class="tg">58%</b></div><div class="bar"><i class="g" style="width:58%"></i></div><div class="reset">Resets in 3d 6h · Sat 09:00</div></div>
+        </div>
+        <div class="mock-card">
+          <div class="mock-row"><span class="mock-name"><i class="dot w"></i>Codex CLI</span><span class="plan">PLUS</span></div>
+          <div class="win"><div class="win-top"><span>5-hour window</span><b class="tw">24%</b></div><div class="bar"><i class="w" style="width:24%"></i></div><div class="reset">Resets in 46m · today 17:12</div></div>
+        </div>
+        <div class="mock-card">
+          <div class="mock-row"><span class="mock-name"><i class="dot d"></i>OpenCode</span></div>
+          <div class="win"><div class="win-top"><span>Primary window</span><b class="td">8%</b></div><div class="bar"><i class="d" style="width:8%"></i></div><div class="reset">Resets in 11h 2m · Thu 04:28</div></div>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <section id="features" class="alt" aria-labelledby="features-title">
+    <div class="wrap">
+      <h2 id="features-title">Know your AI coding quota before it runs out</h2>
+      <p class="section-lede">AI coding agents enforce rolling usage limits — five-hour sessions, weekly caps, model-specific windows. Agents Usage puts every one of them on your Linux desktop, next to the clock.</p>
+      <div class="grid">
+        <article class="card">
+          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg></div>
+          <h3>Remaining quota per window</h3>
+          <p>See the available percentage for each Claude Code window (five-hour, weekly, Sonnet, Opus) and each Codex rate limit at a glance.</p>
+        </article>
+        <article class="card">
+          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+          <h3>Exact reset times</h3>
+          <p>A live countdown plus the local reset day and time on a 24-hour clock, so you know when your Claude usage limit comes back.</p>
+        </article>
+        <article class="card">
+          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/></svg></div>
+          <h3>Warning and critical levels</h3>
+          <p>Set your own thresholds. The widget turns amber when quota runs low and red when it is critical.</p>
+        </article>
+        <article class="card">
+          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.3L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.3L3 16M3 21v-5h5"/></svg></div>
+          <h3>Automatic refresh</h3>
+          <p>Quota data refreshes on a configurable interval. Click refresh any time for an instant update.</p>
+        </article>
+        <article class="card">
+          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg></div>
+          <h3>Native Plasma 6 look</h3>
+          <p>Built with QML and Kirigami. It follows your Breeze theme, accent color, fonts and light or dark mode, in a panel or on the desktop.</p>
+        </article>
+        <article class="card">
+          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+          <h3>Private by design</h3>
+          <p>No telemetry or analytics. The default setup reads only local files and never touches the network.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="agents" aria-labelledby="agents-title">
+    <div class="wrap">
+      <h2 id="agents-title">Supported AI coding agents</h2>
+      <p class="section-lede">One widget for every agent you use. Choose which agents appear; the widget never guesses missing numbers and clearly marks unavailable data.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Agent</th><th scope="col">Data source</th><th scope="col">Quota windows</th></tr></thead>
+          <tbody>
+            <tr><td>Claude Code</td><td>Local status-line collector (offline) or optional Anthropic usage API</td><td>Five-hour, weekly, Sonnet and Opus windows</td></tr>
+            <tr><td>OpenAI Codex CLI</td><td>Local session events or optional live query through the Codex CLI</td><td>Five-hour and weekly rate limits</td></tr>
+            <tr><td>OpenCode</td><td>Optional local provider export</td><td>Windows from the selected model provider</td></tr>
+            <tr><td>Ollama Cloud</td><td>Optional ollama.com balance API</td><td>Session and weekly windows, or included credit</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="install" class="alt" aria-labelledby="install-title">
+    <div class="wrap">
+      <h2 id="install-title">Install the widget on KDE Plasma 6</h2>
+      <p class="section-lede">Requirements: KDE Plasma 6, Python 3.10 or newer and <code>kpackagetool6</code>. No extra Python packages.</p>
+      <div class="steps">
+        <div class="step">
+          <h3>Install from a release file</h3>
+          <p>Download the latest <code>.plasmoid</code> from <a href="https://github.com/serjor/kde-agents-usage/releases/latest">GitHub releases</a> and install it:</p>
+<pre><code>kpackagetool6 --type Plasma/Applet --upgrade io.github.kde-agents-usage-@VERSION@.plasmoid</code></pre>
+        </div>
+        <div class="step">
+          <h3>Or install from source</h3>
+          <p>Clone the repository and run the installer. Run it again to update.</p>
+<pre><code>git clone https://github.com/serjor/kde-agents-usage.git
+cd kde-agents-usage &amp;&amp; ./install.sh</code></pre>
+        </div>
+        <div class="step">
+          <h3>Add it to your panel</h3>
+          <p>Right-click the panel, choose <strong>Add Widgets…</strong> and drag <strong>Agents Usage</strong> to a panel or the desktop. If it is not listed, restart Plasma:</p>
+<pre><code>systemctl --user restart plasma-plasmashell.service</code></pre>
+        </div>
+        <div class="step">
+          <h3>Connect Claude Code</h3>
+          <p>Add the offline collector to <code>~/.claude/settings.json</code>:</p>
+<pre><code>{
+  "statusLine": {
+    "type": "command",
+    "command": "python3 ~/.local/share/plasma/plasmoids/io.github.kde-agents-usage/contents/code/claude-statusline-collector"
+  }
+}</code></pre>
+        </div>
+      </div>
+      <p style="margin-top:1.5rem">Codex works out of the box from local session files. Setup for the live Codex query, OpenCode and Ollama Cloud is in the <a href="https://github.com/serjor/kde-agents-usage#readme">full documentation</a>.</p>
+    </div>
+  </section>
+
+  <section id="privacy" aria-labelledby="privacy-title">
+    <div class="wrap privacy">
+      <div>
+        <h2 id="privacy-title">Your prompts and tokens stay on your machine</h2>
+        <p class="section-lede">Agents Usage reads only what it needs to show a number and a reset time. Every network source is opt-in and talks only to the official endpoint.</p>
+        <p><a href="https://github.com/serjor/kde-agents-usage/blob/main/SECURITY.md">Read the security policy</a></p>
+      </div>
+      <ul class="checklist">
+        <li>No network requests in the default configuration</li>
+        <li>No telemetry, analytics or account identifiers collected</li>
+        <li>Never stores prompts, responses or source code</li>
+        <li>OAuth tokens and API keys kept in memory, never cached</li>
+        <li>Ollama key stored in KWallet or Secret Service</li>
+        <li>Cache files written with user-only permissions</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="faq" class="alt" aria-labelledby="faq-title">
+    <div class="wrap">
+      <h2 id="faq-title">Frequently asked questions</h2>
+      <details open>
+        <summary>How can I see my Claude Code usage limit on Linux?</summary>
+        <p>Install the Agents Usage widget on KDE Plasma 6 and connect its local status-line collector in <code>~/.claude/settings.json</code>. The panel then shows the remaining percentage of your Claude Code five-hour and weekly windows, plus Sonnet and Opus windows when available.</p>
+      </details>
+      <details>
+        <summary>When does my Claude Code five-hour limit reset?</summary>
+        <p>Agents Usage shows a live countdown and the local reset day and time (24-hour clock) for every Claude Code quota window, so you know exactly when the five-hour and weekly limits reset.</p>
+      </details>
+      <details>
+        <summary>Can I check OpenAI Codex CLI rate limits from the desktop?</summary>
+        <p>Yes. By default the widget reads the last rate-limit event from local Codex session files. You can also enable a live query through the installed Codex CLI to see the current five-hour and weekly limits immediately.</p>
+      </details>
+      <details>
+        <summary>Does Agents Usage send my data anywhere?</summary>
+        <p>No. The default configuration makes no network requests and the project has no telemetry or analytics. Optional API sources are off by default and only contact the official Anthropic or Ollama endpoints.</p>
+      </details>
+      <details>
+        <summary>Does it work with OpenCode and Ollama Cloud?</summary>
+        <p>Yes. OpenCode quotas come from a small local provider export file, and Ollama Cloud usage comes from the ollama.com balance API with the API key stored in KWallet or another Secret Service provider.</p>
+      </details>
+      <details>
+        <summary>Is Agents Usage free?</summary>
+        <p>Yes. Agents Usage is free and open-source software under the MIT License, available on GitHub.</p>
+      </details>
+    </div>
+  </section>
+
+  <section class="final" aria-labelledby="final-title">
+    <div class="wrap">
+      <h2 id="final-title">Stop guessing how much Claude Code you have left</h2>
+      <p class="section-lede" style="margin-inline:auto">Free, open source and native to KDE Plasma 6.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://github.com/serjor/kde-agents-usage/releases/latest">Get the latest release</a>
+        <a class="btn btn-ghost" href="https://github.com/serjor/kde-agents-usage">Star on GitHub</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 KDE Agents Usage contributors · MIT License · Not affiliated with KDE e.V., Anthropic, OpenAI or Ollama.</span>
+    <nav aria-label="Footer">
+      <a href="https://github.com/serjor/kde-agents-usage">Source</a>
+      <a href="https://github.com/serjor/kde-agents-usage/releases">Releases</a>
+      <a href="https://github.com/serjor/kde-agents-usage/issues">Issues</a>
+      <a href="https://github.com/serjor/kde-agents-usage/blob/main/CONTRIBUTING.md">Contribute</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>
