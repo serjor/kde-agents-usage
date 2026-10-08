@@ -7,18 +7,35 @@ on:
   push:
     tags:
       - "v*"
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and attach the plasmoid to, like v1.2.3
+        required: true
 
 permissions:
   contents: write
+
+# A release created on GitHub triggers both the tag push and the release event.
+# Both runs build the same file, so the second one waits and replaces the asset.
+concurrency:
+  group: release-${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TAG: ${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
     steps:
       - name: Get the source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: refs/tags/${{ env.TAG }}
           persist-credentials: false
 
       - name: Install Python
@@ -37,10 +54,10 @@ jobs:
 
       - name: Set the package version from the tag
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${TAG#v}"
           case "$version" in
             "" | .* | *[!0-9.]*)
-              echo "Error: tag $GITHUB_REF_NAME is not a version like v1.2.3." >&2
+              echo "Error: tag $TAG is not a version like v1.2.3." >&2
               exit 1
               ;;
           esac
@@ -61,6 +78,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "dist/io.github.kde-agents-usage-${version}.plasmoid" \
-            --title "Agents Usage ${version}" \
-            --generate-notes
+          file="dist/io.github.kde-agents-usage-${version}.plasmoid"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$file" --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "Agents Usage ${version}" \
+              --generate-notes
+          fi

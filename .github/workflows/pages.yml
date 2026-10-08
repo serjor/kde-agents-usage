@@ -10,9 +10,12 @@ on:
     paths:
       - "site/**"
       - ".github/workflows/pages.yml"
-  release:
+  # Runs after the release workflow so the new plasmoid file already exists.
+  workflow_run:
+    workflows:
+      - Release
     types:
-      - published
+      - completed
   workflow_dispatch:
 
 permissions:
@@ -39,14 +42,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
-          version="${tag#v}"
+          # Link the newest release that has the plasmoid file, so the download never 404s.
+          version="$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '
+            [.[] | select((.draft or .prerelease) | not)
+                 | (.tag_name | ltrimstr("v")) as $v
+                 | select(any(.assets[]; .name == "io.github.kde-agents-usage-\($v).plasmoid"))
+                 | $v]
+            | first // empty')"
           case "$version" in
             "" | .* | *[!0-9.]*)
-              echo "Error: latest release tag $tag is not a version like v1.2.3." >&2
+              echo "Error: no release has a plasmoid file with a version like 1.2.3." >&2
               exit 1
               ;;
           esac
+          echo "Linking version $version"
           lastmod="$(date -u +%Y-%m-%d)"
           mkdir _site
           cp -r site/. _site/
