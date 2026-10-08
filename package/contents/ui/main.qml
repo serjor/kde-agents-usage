@@ -421,6 +421,13 @@ PlasmoidItem {
                                 Layout.fillWidth: true
                             }
 
+                            PlasmaComponents.Button {
+                                visible: providerCard.modelData.needs_setup === true
+                                icon.name: "configure"
+                                text: i18n("Configure…")
+                                onClicked: Plasmoid.internalAction("configure").trigger()
+                            }
+
                             Repeater {
                                 model: providerCard.modelData.windows || []
                                 delegate: ColumnLayout {

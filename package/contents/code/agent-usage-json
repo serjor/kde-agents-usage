@@ -45,9 +45,12 @@ CLAUDE_TOKEN_AGENT = "axios/1.15.2"
 CLAUDE_REFRESH_MARGIN = 300
 CLAUDE_REFRESH_TIMEOUT = 6
 CLAUDE_LOCK_STALE = 60
-OLLAMA_API = "https://ollama.com/api/usage"
+OLLAMA_API = "https://ollama.com/api/balance"
 MAX_CACHE_AGE = 3600
 OLLAMA_TIMEOUT = 8
+# Attributes that identify the Ollama API key in the Secret Service (KWallet).
+OLLAMA_SECRET = ["application", "kde-agents-usage", "provider", "ollama"]
+SECRET_TIMEOUT = 8
 CODEX_LIVE_TIMEOUT = 6
 
 
@@ -66,17 +69,22 @@ def read_json(path: Path) -> Any:
         return None
 
 
-def read_text_key(path: Path) -> str | None:
-    """Read a single-line credential file; the value never reaches the log."""
-    try:
-        value = path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
+def valid_key(value: str) -> str | None:
+    """Return a stripped API key when it looks like one, otherwise None."""
+    value = value.strip()
     if not value or len(value) > 256:
         return None
     if not all(character.isalnum() or character in "._-" for character in value):
         return None
     return value
+
+
+def read_text_key(path: Path) -> str | None:
+    """Read a single-line credential file; the value never reaches the log."""
+    try:
+        return valid_key(path.read_text(encoding="utf-8"))
+    except OSError:
+        return None
 
 
 def write_private_json(path: Path, value: Any) -> None:
@@ -145,7 +153,7 @@ def make_window(key: str, label: str, data: Any) -> dict[str, Any] | None:
 def provider(identifier: str, label: str, available: bool = False, *,
              source: str | None = None, plan: str | None = None,
              windows: list[dict[str, Any]] | None = None,
-             error: str | None = None) -> dict[str, Any]:
+             error: str | None = None, needs_setup: bool = False) -> dict[str, Any]:
     return {
         "id": identifier,
         "label": label,
@@ -154,6 +162,7 @@ def provider(identifier: str, label: str, available: bool = False, *,
         "plan": plan,
         "windows": windows or [],
         "error": error,
+        "needs_setup": needs_setup,
     }
 
 
@@ -594,50 +603,52 @@ def collect_opencode() -> dict[str, Any]:
 
 
 def ollama_windows(payload: Any) -> list[dict[str, Any]]:
-    """Normalize the undocumented ollama.com usage document into quota windows."""
-    if not isinstance(payload, dict):
-        return []
-    limits = payload.get("limits")
-    if not isinstance(limits, dict):
-        return []
+    """Normalize the ollama.com balance document into quota windows.
 
-    def fraction_to_percent(value: Any) -> float | None:
-        try:
-            number = float(value)
-        except (TypeError, ValueError):
-            return None
-        if number != number or number < 0 or number > 1:
-            return None
-        return round(number * 100, 1)
-
-    candidates = [
-        ("5h", "5 hours", limits.get("session")),
-        ("7d", "7 days", limits.get("weekly")),
-    ]
+    Legacy plans report session and weekly limits as remaining percentages.
+    Current plans report an included USD allowance for a billing period.
+    """
+    included = payload.get("included") if isinstance(payload, dict) else None
+    if not isinstance(included, dict):
+        return []
     result = []
-    for key, label, value in candidates:
+    for key, label, name in (("5h", "5 hours", "session"), ("7d", "7 days", "weekly")):
+        limit = included.get(name)
+        if not isinstance(limit, dict):
+            continue
+        remaining = percent(limit.get("remaining_percent"))
         window = make_window(key, label, {
-            "used_percent": fraction_to_percent(value.get("usage") if isinstance(value, dict) else None)
+            "used_percent": None if remaining is None else 100 - remaining,
+            "resets_at": limit.get("resets_at"),
+        })
+        if window:
+            result.append(window)
+
+    balance, allowance = included.get("balance_usd"), included.get("allowance_usd")
+    if all(isinstance(value, (int, float)) and not isinstance(value, bool)
+           for value in (balance, allowance)) and allowance > 0:
+        period = included.get("period")
+        window = make_window("$", "Included credit", {
+            "used_percent": max(0, min(100, (1 - balance / allowance) * 100)),
+            "resets_at": period.get("until") if isinstance(period, dict) else None,
         })
         if window:
             result.append(window)
     return result
 
 
-def sanitized_ollama(payload: Any) -> dict[str, Any] | None:
-    """Return only the quota fields that the widget uses."""
-    windows = ollama_windows(payload)
-    if not windows:
-        return None
-    result: dict[str, Any] = {}
-    if isinstance(payload, dict) and isinstance(payload.get("limits"), dict):
-        session = payload["limits"].get("session")
-        weekly = payload["limits"].get("weekly")
-        if isinstance(session, dict) and session.get("usage") is not None:
-            result["session"] = session["usage"]
-        if isinstance(weekly, dict) and weekly.get("usage") is not None:
-            result["weekly"] = weekly["usage"]
-    return result if result else None
+def cached_windows(value: Any) -> list[dict[str, Any]]:
+    """Rebuild cached windows, keeping only well-formed entries."""
+    if not isinstance(value, list):
+        return []
+    result = []
+    for item in value:
+        if isinstance(item, dict) and isinstance(item.get("key"), str) \
+                and isinstance(item.get("label"), str):
+            window = make_window(item["key"], item["label"], item)
+            if window:
+                result.append(window)
+    return result
 
 
 def fetch_ollama(api_key: str) -> Any:
@@ -654,50 +665,112 @@ def fetch_ollama(api_key: str) -> Any:
         return json.loads(response.read(1024 * 1024).decode("utf-8"))
 
 
-def collect_ollama() -> dict[str, Any]:
-    """Query the ollama.com usage API when the user has stored an API key.
+def secret_tool(*arguments: str, secret: str | None = None) -> subprocess.CompletedProcess | None:
+    """Run secret-tool; the key travels only through stdin and stdout."""
+    try:
+        return subprocess.run(
+            ["secret-tool", *arguments], input=secret, text=True,
+            capture_output=True, timeout=SECRET_TIMEOUT, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
 
-    The key is read from OLLAMA_API_KEY or ~/.config/kde-agents-usage/ollama-key.
-    Responses are cached for MAX_CACHE_AGE seconds and never include the key.
+
+def secret_ollama_key() -> str | None:
+    result = secret_tool("lookup", *OLLAMA_SECRET)
+    if result is None or result.returncode != 0:
+        return None
+    return valid_key(result.stdout)
+
+
+def ollama_api_key() -> str | None:
+    """Read the key from OLLAMA_API_KEY, the Secret Service or the key file.
+
+    The wallet wins over the file so a key saved from the settings page is
+    never shadowed by an older file.
+    """
+    from_env = valid_key(os.environ.get("OLLAMA_API_KEY", ""))
+    if from_env:
+        return from_env
+    key_path = Path(os.environ.get(
+        "XDG_CONFIG_HOME", HOME / ".config")) / "kde-agents-usage/ollama-key"
+    return secret_ollama_key() or read_text_key(key_path)
+
+
+def collect_ollama() -> dict[str, Any]:
+    """Query the ollama.com balance API when the user has stored an API key.
+
+    Quota windows are cached for MAX_CACHE_AGE seconds and never include the key.
     """
     cache_path = CACHE_DIR / "ollama-usage.json"
     cached = read_json(cache_path)
 
-    api_key = os.environ.get("OLLAMA_API_KEY", "").strip()
-    key_path = Path(os.environ.get(
-        "XDG_CONFIG_HOME", HOME / ".config")) / "kde-agents-usage/ollama-key"
-    if not api_key:
-        key_file = read_text_key(key_path)
-        if key_file:
-            api_key = key_file
+    api_key = ollama_api_key()
+    rejected = False
 
     if api_key:
         try:
-            payload = fetch_ollama(api_key)
-            windows = ollama_windows(payload)
+            windows = ollama_windows(fetch_ollama(api_key))
             if windows:
-                usage = sanitized_ollama(payload)
-                if usage:
-                    write_private_json(cache_path, {"collected_at": int(time.time()), "usage": usage})
-                return provider("ollama", "Ollama", True, source="ollama.com",
-                                plan=plan_name(payload.get("plan")), windows=windows)
-        except (OSError, ValueError, urllib.error.URLError, urllib.error.HTTPError):
+                write_private_json(cache_path, {"collected_at": int(time.time()), "windows": windows})
+                return provider("ollama", "Ollama", True, source="ollama.com", windows=windows)
+        except urllib.error.HTTPError as error:
+            rejected = error.code in (401, 403)
+        except (OSError, ValueError, urllib.error.URLError):
             pass
 
     if isinstance(cached, dict):
         collected = timestamp(cached.get("collected_at"))
-        usage = cached.get("usage")
-        if isinstance(usage, dict):
-            windows = ollama_windows({"limits": {
-                "session": {"usage": usage.get("session")},
-                "weekly": {"usage": usage.get("weekly")},
-            }})
-            if windows and collected and time.time() - collected <= MAX_CACHE_AGE:
-                return provider("ollama", "Ollama", True, source="ollama.com cache", windows=windows)
+        windows = cached_windows(cached.get("windows"))
+        if windows and collected and time.time() - collected <= MAX_CACHE_AGE:
+            return provider("ollama", "Ollama", True, source="ollama.com cache", windows=windows)
 
-    message = ("Set OLLAMA_API_KEY or create ~/.config/kde-agents-usage/ollama-key "
-               "with an ollama.com API key (ollama.com/settings/keys).")
-    return provider("ollama", "Ollama", error=message)
+    if rejected:
+        return provider("ollama", "Ollama", error="ollama.com rejected the API key. Add a new one "
+                        "in the widget settings.", needs_setup=True)
+    if api_key:
+        return provider("ollama", "Ollama", error="ollama.com did not return quota data.")
+    return provider("ollama", "Ollama", error="Add your ollama.com API key in the widget settings.",
+                    needs_setup=True)
+
+
+def ask_ollama_key() -> str | None:
+    """Prompt for the key with a KDE password dialog, keeping it out of argv."""
+    try:
+        result = subprocess.run(
+            ["kdialog", "--title", "Ollama Cloud",
+             "--password", "Paste your API key from ollama.com/settings/keys:"],
+            text=True, capture_output=True, check=False,
+        )
+    except OSError:
+        raise SystemExit("kdialog is not installed.")
+    if result.returncode != 0:
+        return None
+    key = valid_key(result.stdout)
+    if not key:
+        raise SystemExit("That does not look like an ollama.com API key.")
+    return key
+
+
+def manage_ollama_key(action: str) -> int:
+    """Store, forget or report the Secret Service key for the settings page.
+
+    Prints "stored", "missing" or "unsupported"; failures go to stderr.
+    """
+    if not shutil.which("secret-tool"):
+        print("unsupported")
+        return 0
+    if action == "store":
+        key = ask_ollama_key()
+        if key:
+            result = secret_tool("store", "--label=Ollama API key (KDE Agents Usage)",
+                                 *OLLAMA_SECRET, secret=key)
+            if result is None or result.returncode != 0:
+                raise SystemExit("The Secret Service did not store the key.")
+    elif action == "forget":
+        secret_tool("clear", *OLLAMA_SECRET)
+    print("stored" if secret_ollama_key() else "missing")
+    return 0
 
 
 COLLECTORS = {"claude": collect_claude, "codex": collect_codex, "opencode": collect_opencode,
@@ -705,6 +778,10 @@ COLLECTORS = {"claude": collect_claude, "codex": collect_codex, "opencode": coll
 
 
 def main() -> int:
+    key_actions = {"--store-ollama-key": "store", "--forget-ollama-key": "forget",
+                   "--ollama-key-status": "status"}
+    if len(sys.argv) == 2 and sys.argv[1] in key_actions:
+        return manage_ollama_key(key_actions[sys.argv[1]])
     requested = [item.strip().lower() for item in
                  os.environ.get("AGENT_USAGE_PROVIDERS", "claude,codex,opencode").split(",") if item.strip()]
     providers = []

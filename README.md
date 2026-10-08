@@ -29,7 +29,7 @@ The panel view shows all available quota windows. Open the widget to see reset c
 | OpenAI Codex CLI | Recent local session events | Last observed five-hour and weekly windows |
 | OpenAI Codex CLI | Optional account query through the installed CLI | Current five-hour and weekly windows |
 | OpenCode | Optional local provider export | Windows from the selected provider |
-| Ollama Cloud | Optional ollama.com usage API | Session and weekly windows |
+| Ollama Cloud | Optional ollama.com balance API | Session and weekly windows, or included credit |
 
 OpenCode connects to different model providers. Thus, OpenCode does not have one universal quota.
 
@@ -40,6 +40,7 @@ The widget does not estimate missing percentages. It shows an unavailable state 
 - KDE Plasma 6.
 - Python 3.10 or a newer version.
 - `kpackagetool6`.
+- Optional, to save the Ollama Cloud API key in the system wallet: `secret-tool` (libsecret) and `kdialog`.
 
 The widget has no external Python package dependencies.
 
@@ -132,18 +133,26 @@ Use this format:
 
 ## Configure Ollama Cloud
 
-The widget can read your Ollama Cloud session and weekly limits from the ollama.com usage API.
-This option is off by default. Enable **Ollama Cloud** in the widget settings, then create an
-API key at [ollama.com/settings/keys](https://ollama.com/settings/keys).
+The widget reads your Ollama Cloud quota from the [ollama.com balance API](https://docs.ollama.com/api/balance).
+Legacy plans show the session and weekly limits with their reset times. Current plans show how
+much of the included credit is used and when the billing period ends.
+This option is off by default.
 
-Provide the key through one of these places:
+1. Enable **Ollama Cloud** in the widget settings.
+2. Create an API key at [ollama.com/settings/keys](https://ollama.com/settings/keys).
+3. Click **Add API key…** under the option and paste the key.
 
-1. The `OLLAMA_API_KEY` environment variable.
+The widget saves the key in the system wallet (KWallet or another Secret Service provider)
+through `secret-tool`, so the key never appears in a command line or a configuration file.
+
+If `secret-tool` is not available, provide the key through one of these places instead:
+
+1. The `OLLAMA_API_KEY` environment variable. It takes priority over the wallet.
 2. A single-line file at `~/.config/kde-agents-usage/ollama-key` that contains only the key.
+   The wallet takes priority over this file.
 
-The key is sent only to `https://ollama.com/api/usage`. The helper caches the quota values for
-one hour in `~/.cache/kde-agents-usage/ollama-usage.json` and never stores the key. The usage
-response has no reset time, so those windows show a reset state of unknown.
+The key is sent only to `https://ollama.com/api/balance`. The helper caches the quota values for
+one hour in `~/.cache/kde-agents-usage/ollama-usage.json` and never stores the key.
 
 ## Privacy and security
 
