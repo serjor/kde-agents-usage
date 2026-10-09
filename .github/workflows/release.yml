@@ -68,11 +68,17 @@ jobs:
       - name: Build the plasmoid package
         run: |
           mkdir dist
-          (cd package && zip -r "../dist/io.github.kde-agents-usage-${version}.plasmoid" .)
+          # Tests and py_compile leave bytecode in package/; keep it out of the plasmoid.
+          (cd package && zip -r "../dist/io.github.kde-agents-usage-${version}.plasmoid" . -x '*__pycache__/*' '*.pyc')
 
       - name: Verify the plasmoid package
         run: |
-          test "$(unzip -l "dist/io.github.kde-agents-usage-${version}.plasmoid" | grep -cE '[[:space:]]metadata\.json$')" -eq 1
+          file="dist/io.github.kde-agents-usage-${version}.plasmoid"
+          test "$(unzip -l "$file" | grep -cE '[[:space:]]metadata\.json$')" -eq 1
+          if unzip -l "$file" | grep -qE '__pycache__|\.pyc$'; then
+            echo "Error: the plasmoid contains Python bytecode." >&2
+            exit 1
+          fi
 
       - name: Publish the release
         env:
